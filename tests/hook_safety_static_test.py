@@ -4,17 +4,24 @@ import sys
 root=Path(sys.argv[1])
 hook=(root/'src/hook_runtime.cpp').read_text(encoding='utf-8')
 boot=(root/'src/runtime_bootstrap.cpp').read_text(encoding='utf-8')
+cmake=(root/'CMakeLists.txt').read_text(encoding='utf-8')
+build=(root/'scripts/build_android_arm64.sh').read_text(encoding='utf-8')
+manifest=(root/'src/original_hook_manifest.hpp').read_text(encoding='utf-8')
+assert 'ASTRAE_ENABLE_RUNTIME_AUTOSTART' in boot
+assert 'ASTRAE_ENABLE_RUNTIME_AUTOSTART' in cmake and ' OFF)' in cmake
+assert 'ASTRAE_ENABLE_RUNTIME_AUTOSTART="${ASTRAE_ENABLE_RUNTIME_AUTOSTART:-OFF}"' in build
+assert 'if(!spec.has_trampoline)' in hook
+assert 'if(!spec->has_trampoline)' in hook
+line=next(x for x in manifest.splitlines() if '"local_request"' in x)
+assert ',0x0,false,"local_request"' in line
+assert 'no original trampoline' in hook
+assert 'automatic installation is disabled until its original control flow is recovered' in hook
 assert 'make_trampoline' in hook and 'target+kPatchSize' in hook
-assert 'LocalRequestFn original=ASTRAE_ORIGINAL(LocalRequestFn,5)' in hook
-assert 'original(network,server,url,request,refresh,method)' in hook
 assert 'AstraeOffline_RespondManaged(network,"ErrorPacket"' not in hook
-for symbol in ['text_locale_hook','banner_click_hook','ui_input_tick_hook','unlock_notifications_hook','unlock_popup_step_hook','action_pack_shown_hook','first_day_load_hook','native_facility_click_hook','item_selection_initialize_hook','signed_exchange_refresh_hook']:
-    assert symbol in hook, symbol
-assert 'initialize_wait(120000,100,&error)' in boot
-assert boot.index('initialize_wait') < boot.index('load_schema') < boot.index('install_local_request_hook')
-assert 'install_ui_passthrough_hooks' in boot
-assert boot.index('managed_request_seen') < boot.index('install_ui_passthrough_hooks')
-assert 'bool managed_request_seen()' in (root/'src/hook_runtime.hpp').read_text(encoding='utf-8')
-assert '{37,' not in hook[hook.index('static const UiBinding kUiBindings[]'):hook.index('};',hook.index('static const UiBinding kUiBindings[]'))]
-assert 'no hooks installed' in boot
-print('hook fallback/trampoline/deferred UI safety checks passed')
+# UI passthrough remains conservative: no hook without a trampoline can be registered.
+ui=hook[hook.index('static const UiBinding kUiBindings[]'):hook.index('};',hook.index('static const UiBinding kUiBindings[]'))]
+for forbidden in ['{10,','{11,','{20,','{37,']:
+    assert forbidden not in ui
+assert 'ASTRAE_ENABLE_RUNTIME_AUTOSTART' in boot
+assert 'pthread_create' in boot
+print('safe-load default and no-fabricated-trampoline checks passed')

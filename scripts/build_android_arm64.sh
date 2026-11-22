@@ -23,6 +23,7 @@ cmake -S "$ROOT" -B "$BUILD_DIR" \
   -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-23 -DANDROID_STL=c++_static \
   -DCMAKE_BUILD_TYPE=Release -DASTRAE_BUILD_TESTS=OFF \
+  -DASTRAE_ENABLE_RUNTIME_AUTOSTART="${ASTRAE_ENABLE_RUNTIME_AUTOSTART:-OFF}" \
   -DASTRAE_ORIGINAL_SO="${ASTRAE_ORIGINAL_SO:-}"
 cmake --build "$BUILD_DIR" --parallel "$JOBS"
 SO="$BUILD_DIR/libastraeoffline.so"

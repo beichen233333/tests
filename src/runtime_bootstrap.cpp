@@ -6,7 +6,7 @@
 #include <chrono>
 #include <cstdio>
 #include <thread>
-#if defined(__ANDROID__)
+#if defined(__ANDROID__) && defined(ASTRAE_ENABLE_RUNTIME_AUTOSTART)
 #include <android/log.h>
 #include <pthread.h>
 namespace {
