@@ -4,14 +4,17 @@
 #include "embedded_assets.hpp"
 #include "json.hpp"
 #include "original_store_abi.h"
+#include "debug_log.hpp"
 #include <array>
 #include <atomic>
 #include <cstring>
 #include <ctime>
 #include <limits>
 #include <mutex>
+#include <sstream>
 #include <cstdio>
 #include <cstdlib>
+#include <unordered_set>
 
 namespace astrae::lobby {
 namespace {
@@ -28,6 +31,35 @@ cJSON *guide_state_from_document(const cJSON *document){
 }
 cJSON *guide_state(){return guide_state_from_document(store_document());}
 
+bool artifact_capacity_tables(void *data_manager,std::string *error){
+    if(error)error->clear();
+    if(!data_manager){if(error)*error="DataManager is null for artifact_capacity_tables";return false;}
+    // Exact object path from artifact_capacity_tables@0x24c2ec:
+    // DataManager+0x10 -> root+0x140 -> table+0x18 -> wrapper+0x10 -> Common.
+    void *root=load_pointer(data_manager,0x10);if(!root){if(error)*error="DataManager root is null for artifact capacity";return false;}
+    void *table=load_pointer(root,0x140);if(!table){if(error)*error="Common DataManager slot 0x140 is null";return false;}
+    void *wrapper=load_pointer(table,0x18);if(!wrapper){if(error)*error="Common table wrapper is null";return false;}
+    void *common=load_pointer(wrapper,0x10);if(!common){if(error)*error="Common managed object is null";return false;}
+    auto &runtime=il2cpp::Runtime::instance();const auto &api=runtime.api();if(!api.object_get_class||!api.object_unbox){if(error)*error="IL2CPP object reflection/unboxing API unavailable for artifact capacity";return false;}
+    il2cpp::Runtime::ThreadScope thread(runtime);if(!thread.ok()){if(error)*error=thread.error();return false;}
+    std::string class_error;void *secure_int=runtime.find_class("_AT.Shared.SecureInt",&class_error);if(!secure_int){if(error)*error="_AT.Shared.SecureInt resolution failed: "+class_error;return false;}
+    void *setter=runtime.find_method(secure_int,"set_Value",1);if(!setter){if(error)*error="SecureInt.set_Value(Int32) method not found";return false;}
+    void *common_class=api.object_get_class(common);if(!common_class){if(error)*error="Common object has no runtime class";return false;}
+    void *getter=runtime.find_method(common_class,"get_Inventory_Artifact_Max_Slots",0);if(!getter){if(error)*error="Common.get_Inventory_Artifact_Max_Slots() method not found";return false;}
+    int32_t capacity=9999;void *arguments[1]={&capacity};std::string invoke_error;
+    // The reference invokes SecureInt.set_Value on the inline field at Common+0xc8.
+    // This value-type field is not a separately allocated Managed object.
+    void *secure_int_field=static_cast<uint8_t*>(common)+0xc8;
+    if(!runtime.invoke(setter,secure_int_field,arguments,nullptr,&invoke_error)){if(error)*error="SecureInt.set_Value(9999) failed: "+invoke_error;return false;}
+    void *boxed=nullptr;if(!runtime.invoke(getter,common,nullptr,&boxed,&invoke_error)){if(error)*error="Common.get_Inventory_Artifact_Max_Slots() failed: "+invoke_error;return false;}
+    if(!boxed){if(error)*error="Common.get_Inventory_Artifact_Max_Slots() returned null";return false;}
+    const void *raw=api.object_unbox(boxed);if(!raw){if(error)*error="artifact inventory capacity getter did not return a boxed Int32";return false;}
+    int32_t actual=0;std::memcpy(&actual,raw,sizeof(actual));
+    ASTRAE_LOGI("reference artifact capacity applied: requested=%d actual=%d common=%p field_offset=0xc8",capacity,actual,common);
+    if(actual!=capacity){if(error)*error="artifact inventory capacity verification failed: expected 9999, got "+std::to_string(actual);return false;}
+    return true;
+}
+
 bool apply_permanent_raid_tables(void *data_manager,std::string *error){
     if(error)error->clear();
     // Exact field path recovered from AArch64: dm+0x10 -> +0x320 -> +0x18 -> +0x10.
@@ -35,7 +67,7 @@ bool apply_permanent_raid_tables(void *data_manager,std::string *error){
     void *manager=load_pointer(root,0x320);if(!manager){if(error)*error="permanent-raid table manager is null";return false;}
     void *table=load_pointer(manager,0x18);if(!table){if(error)*error="permanent-raid table wrapper is null";return false;}
     void *list=load_pointer(table,0x10);if(!list){if(error)*error="permanent-raid row list is null";return false;}
-    const uint64_t count=load_u64(list,0x18);if(count>128){if(error)*error="permanent-raid row count is outside the original 0..128 range";return false;}
+    const uint64_t count=load_u64(list,0x18);if(count==0||count>128){if(error)*error="permanent-raid row count is outside the original 1..128 range";return false;}
     for(uint64_t i=0;i<count;++i){void *row=load_pointer(list,0x20+static_cast<size_t>(i)*sizeof(void*));if(!row){if(error)*error="permanent-raid row pointer is null at index "+std::to_string(i);return false;}std::array<uint64_t,2> value{kPermanentRaidRowValue,kPermanentRaidRowValue};std::memcpy(static_cast<uint8_t*>(row)+0x38,value.data(),sizeof(value));}
     return true;
 }
@@ -53,24 +85,28 @@ int64_t local_activity_period(std::string *error){
     int64_t now_ticks=static_cast<int64_t>(std::time(nullptr))*kTicksPerSecond+kUnixEpochTicks;void *arguments[1]={&now_ticks};void *result=nullptr;std::string invoke_error;
     if(!runtime.invoke(method,nullptr,arguments,&result,&invoke_error)){if(error)*error="GetRecentResetDay invocation failed: "+invoke_error;return -1;}
     if(!result){if(error)*error="GetRecentResetDay returned null";return -1;}
-    const uint32_t result_handle=runtime.retain(result,true);if(!result_handle){if(error)*error="could not pin GetRecentResetDay return value";return -1;}
-    const void *raw=api.object_unbox(result);if(!raw){runtime.release(result_handle);if(error)*error="GetRecentResetDay result is not a boxed value type";return -1;}
-    uint64_t ticks=0;std::memcpy(&ticks,raw,sizeof(ticks));runtime.release(result_handle);
+    // The boxed DateTime is unboxed immediately; no Managed allocation occurs between
+    // runtime_invoke and object_unbox, so a transient GCHandle is unnecessary here.
+    const void *raw=api.object_unbox(result);if(!raw){if(error)*error="GetRecentResetDay result is not a boxed value type";return -1;}
+    uint64_t ticks=0;std::memcpy(&ticks,raw,sizeof(ticks));
     return static_cast<int64_t>(ticks&0x3fffffffffffffffULL);
 }
 
+void *table_get_key_borrowed(void *data_manager,uint32_t table_offset,const void *key,std::string *error){
+    if(error)error->clear();if(!data_manager||!key){if(error)*error="DataManager or table key is null";return nullptr;}
+    if(table_offset<0x10||table_offset>0x10000||(table_offset&7U)){if(error)*error="DataManager table offset is invalid";return nullptr;}
+    void *root=load_pointer(data_manager,0x10);if(!root){if(error)*error="DataManager table root is null";return nullptr;}
+    void *table=load_pointer(root,table_offset);if(!table){if(error)*error="DataManager table slot is null";return nullptr;}
+    void *dictionary=load_pointer(table,0x18);if(!dictionary){if(error)*error="DataManager table dictionary is null";return nullptr;}
+    auto &runtime=il2cpp::Runtime::instance();const auto &api=runtime.api();if(!api.object_get_class){if(error)*error="il2cpp_object_get_class is unavailable";return nullptr;}
+    il2cpp::Runtime::ThreadScope scope(runtime);if(!scope.ok()){if(error)*error=scope.error();return nullptr;}
+    void *klass=api.object_get_class(dictionary);void *method=runtime.find_method(klass,"get_Item",1);if(!method){if(error)*error="managed table dictionary get_Item(key) method not found";return nullptr;}
+    void *arguments[1]={const_cast<void*>(key)};void *result=nullptr;std::string invoke_error;if(!runtime.invoke(method,dictionary,arguments,&result,&invoke_error)){if(error)*error="managed table lookup failed: "+invoke_error;return nullptr;}
+    if(!result&&error)*error="managed table lookup returned null row";return result;
+}
+void *table_get_borrowed(void *data_manager,uint32_t table_offset,uint64_t key,std::string *error){return table_get_key_borrowed(data_manager,table_offset,&key,error);}
 uint32_t table_get_key_pinned(void *data_manager,uint32_t table_offset,const void *key,std::string *error){
-    if(error)error->clear();if(!data_manager||!key){if(error)*error="DataManager or table key is null";return 0;}
-    if(table_offset<0x10||table_offset>0x10000||(table_offset&7U)){if(error)*error="DataManager table offset is invalid";return 0;}
-    void *root=load_pointer(data_manager,0x10);if(!root){if(error)*error="DataManager table root is null";return 0;}
-    void *table=load_pointer(root,table_offset);if(!table){if(error)*error="DataManager table slot is null";return 0;}
-    void *dictionary=load_pointer(table,0x18);if(!dictionary){if(error)*error="DataManager table dictionary is null";return 0;}
-    auto &runtime=il2cpp::Runtime::instance();const auto &api=runtime.api();if(!api.object_get_class){if(error)*error="il2cpp_object_get_class is unavailable";return 0;}
-    il2cpp::Runtime::ThreadScope scope(runtime);if(!scope.ok()){if(error)*error=scope.error();return 0;}
-    void *klass=api.object_get_class(dictionary);void *method=runtime.find_method(klass,"get_Item",1);if(!method){if(error)*error="managed table dictionary get_Item(key) method not found";return 0;}
-    void *arguments[1]={const_cast<void*>(key)};void *result=nullptr;std::string invoke_error;if(!runtime.invoke(method,dictionary,arguments,&result,&invoke_error)){if(error)*error="managed table lookup failed: "+invoke_error;return 0;}
-    if(!result){if(error)*error="managed table lookup returned null row";return 0;}
-    const uint32_t handle=runtime.retain(result,true);if(!handle&&error)*error="could not pin managed table row";return handle;
+    void *row=table_get_key_borrowed(data_manager,table_offset,key,error);if(!row)return 0;const uint32_t handle=il2cpp::Runtime::instance().retain(row,true);if(!handle&&error)*error="could not pin managed table row";return handle;
 }
 uint32_t table_get_pinned(void *data_manager,uint32_t table_offset,uint64_t key,std::string *error){return table_get_key_pinned(data_manager,table_offset,&key,error);}
 uint32_t table_get_i32_pinned(void *data_manager,uint32_t table_offset,int32_t key,std::string *error){return table_get_key_pinned(data_manager,table_offset,&key,error);}
@@ -79,13 +115,16 @@ template<typename T> bool read_row_scalar(void *row,const std::string &getter,T 
     if(error)error->clear();if(value)*value=T{};if(!row||!value){if(error)*error="row getter received a null argument";return false;}
     auto &runtime=il2cpp::Runtime::instance();const auto &api=runtime.api();if(!api.object_get_class||!api.object_unbox){if(error)*error="IL2CPP object reflection or unboxing API is unavailable";return false;}
     il2cpp::Runtime::ThreadScope scope(runtime);if(!scope.ok()){if(error)*error=scope.error();return false;}
-    const uint32_t row_handle=runtime.retain(row,true);if(!row_handle){if(error)*error="could not pin managed row during getter invocation";return false;}
-    void *klass=api.object_get_class(row);void *method=runtime.find_method(klass,getter,0);if(!method){runtime.release(row_handle);if(error)*error="managed row getter not found: "+getter;return false;}
-    void *boxed=nullptr;std::string invoke_error;if(!runtime.invoke(method,row,nullptr,&boxed,&invoke_error)){runtime.release(row_handle);if(error)*error="managed row getter invocation failed ("+getter+"): "+invoke_error;return false;}
-    if(!boxed){runtime.release(row_handle);if(error)*error="managed row getter returned null: "+getter;return false;}
-    const uint32_t value_handle=runtime.retain(boxed,true);if(!value_handle){runtime.release(row_handle);if(error)*error="could not pin boxed row getter result: "+getter;return false;}
-    const void *raw=api.object_unbox(boxed);if(!raw){runtime.release(value_handle);runtime.release(row_handle);if(error)*error="managed row getter result is not a boxed value: "+getter;return false;}
-    std::memcpy(value,raw,sizeof(T));runtime.release(value_handle);runtime.release(row_handle);return true;
+    // Callers pass rows owned by a live DataManager collection/dictionary, and this
+    // getter is synchronous. Read the boxed scalar immediately, before another Managed
+    // allocation or safepoint; do not create a temporary GCHandle whose free path is
+    // known to abort in the target IL2CPP build (observed in ReleaseRoots::~ReleaseRoots).
+    void *klass=api.object_get_class(row);if(!klass){if(error)*error="managed row has no runtime class: "+getter;return false;}
+    void *method=runtime.find_method(klass,getter,0);if(!method){if(error)*error="managed row getter not found: "+getter;return false;}
+    void *boxed=nullptr;std::string invoke_error;if(!runtime.invoke(method,row,nullptr,&boxed,&invoke_error)){if(error)*error="managed row getter invocation failed ("+getter+"): "+invoke_error;return false;}
+    if(!boxed){if(error)*error="managed row getter returned null: "+getter;return false;}
+    const void *raw=api.object_unbox(boxed);if(!raw){if(error)*error="managed row getter result is not a boxed value: "+getter;return false;}
+    std::memcpy(value,raw,sizeof(T));return true;
 }
 }
 bool row_u64(void *row,const std::string &getter,uint64_t *value,std::string *error){return read_row_scalar<uint64_t>(row,getter,value,error);}
@@ -159,14 +198,13 @@ bool managed_property_value(void *row,const InstallationField &field,json::Value
     const std::string getter=std::string("get_")+field.name;void *method=runtime.find_method(klass,getter,0);if(!method){if(error)*error="installation row getter not found: "+getter;return false;}
     void *boxed=nullptr;std::string invoke_error;if(!runtime.invoke(method,row,nullptr,&boxed,&invoke_error)){if(error)*error="installation row getter failed ("+getter+"): "+invoke_error;return false;}
     if(!boxed){if(error)*error="installation row getter returned null: "+getter;return false;}
-    const uint32_t handle=runtime.retain(boxed,true);if(!handle){if(error)*error="cannot pin installation row getter result: "+getter;return false;}
-    const void *raw=api.object_unbox(boxed);if(!raw){runtime.release(handle);if(error)*error="installation row getter result is not a boxed value: "+getter;return false;}
+    const void *raw=api.object_unbox(boxed);if(!raw){if(error)*error="installation row getter result is not a boxed value: "+getter;return false;}
     switch(field.kind){
         case InstallationField::Kind::U64String:{uint64_t v=0;std::memcpy(&v,raw,sizeof(v));*value=std::to_string(v);break;}
         case InstallationField::Kind::Int32:{int32_t v=0;std::memcpy(&v,raw,sizeof(v));*value=v;break;}
         case InstallationField::Kind::Boolean:{uint8_t v=0;std::memcpy(&v,raw,sizeof(v));*value=(v!=0);break;}
     }
-    runtime.release(handle);return true;
+    return true;
 }
 }
 bool installation_native_tables(void *data_manager,std::string *error){
@@ -183,14 +221,13 @@ bool installation_native_tables(void *data_manager,std::string *error){
     json::Value converted=json::Value::array();converted.as_array().reserve(static_cast<size_t>(count));
     for(uint64_t i=0;i<count;++i){
         void *row_object=load_pointer(list,0x20+static_cast<size_t>(i)*sizeof(void*));if(!row_object){if(error)*error="installation row pointer is null at index "+std::to_string(i);return false;}
-        const uint32_t row_handle=runtime.retain(row_object,true);if(!row_handle){if(error)*error="cannot pin installation row at index "+std::to_string(i);return false;}
-        uint64_t id=0;std::string row_error;if(!row_u64(row_object,"get_Id",&id,&row_error)){runtime.release(row_handle);if(error)*error="installation row Id lookup failed at index "+std::to_string(i)+": "+row_error;return false;}
+        uint64_t id=0;std::string row_error;if(!row_u64(row_object,"get_Id",&id,&row_error)){if(error)*error="installation row Id lookup failed at index "+std::to_string(i)+": "+row_error;return false;}
         json::Value output=json::Value::object();(void)find_seed_installation(id,&output);
         // The original duplicates the static seed row (when found), deletes these nine managed fields,
         // and then repopulates them from live Managed getters.
         for(const auto &field:kInstallationFields)output.erase(field.name);
-        for(const auto &field:kInstallationFields){json::Value value;if(!managed_property_value(row_object,field,&value,&row_error)){runtime.release(row_handle);if(error)*error="installation field "+std::string(field.name)+" failed at row "+std::to_string(id)+": "+row_error;return false;}output[field.name]=std::move(value);}
-        runtime.release(row_handle);converted.push_back(std::move(output));
+        for(const auto &field:kInstallationFields){json::Value value;if(!managed_property_value(row_object,field,&value,&row_error)){if(error)*error="installation field "+std::string(field.name)+" failed at row "+std::to_string(id)+": "+row_error;return false;}output[field.name]=std::move(value);}
+        converted.push_back(std::move(output));
     }
     g_installation_config["Ins_GreatTemple_Buff"]=std::move(converted);g_installation_tables_ready=true;return true;
 }
@@ -223,42 +260,99 @@ bool installation_native_get_row(const std::string &table,uint64_t id,json::Valu
 }
 
 bool run_initial_lobby_route(void *login_controller,void *data_manager,uint64_t content_bits,InitialLobbyAction *action,std::string *error){
+    ASTRAE_LOGI("initial lobby route started: controller=%p data_manager=%p content_bits=0x%llx",login_controller,data_manager,static_cast<unsigned long long>(content_bits));
     if(error)error->clear();if(action)*action=InitialLobbyAction::None;
     if(!login_controller){if(error)*error="UILoginPageController instance is null";return false;}
+    if(!data_manager){if(error)*error="DataManager is null; refusing to enter lobby without the controller's managed DataManager";ASTRAE_LOGE("lobby route rejected: DataManager is null; controller+0x10 must be resolved before EnterLobby");return false;}
     auto &runtime=il2cpp::Runtime::instance();const auto &api=runtime.api();if(!api.object_get_class){if(error)*error="il2cpp_object_get_class is unavailable";return false;}
     il2cpp::Runtime::ThreadScope scope(runtime);if(!scope.ok()){if(error)*error=scope.error();return false;}
-    std::string class_error;void *login_class=runtime.find_class("_AT.UI.UILoginPageController",&class_error);if(!login_class){if(error)*error="UILoginPageController type resolution failed: "+class_error;return false;}
-    const uint32_t controller_handle=runtime.retain(login_controller,true);if(!controller_handle){if(error)*error="could not pin UILoginPageController instance";return false;}
-    auto invoke_login_method=[&](const char *name,void **arguments)->bool{void *method=runtime.find_method(login_class,name,arguments?1:0);if(!method){if(error)*error=std::string("UILoginPageController method not found: ")+name;return false;}void *result=nullptr;std::string invoke_error;if(!runtime.invoke(method,login_controller,arguments,&result,&invoke_error)){if(error)*error=std::string("UILoginPageController.")+name+" invocation failed: "+invoke_error;return false;}if(action)*action=std::strcmp(name,"EnterLobby")==0?InitialLobbyAction::EnterLobby:InitialLobbyAction::PlayFirstDay;return true;};
+    std::string class_error;void *login_class=runtime.find_class("_AT.UI.UILoginPageController",&class_error);if(!login_class){if(error)*error="UILoginPageController type resolution failed: "+class_error;ASTRAE_LOGE("lobby route cannot resolve controller class: %s",class_error.c_str());return false;}
+    // Hook #3's first ABI argument is named `controller` in the original DWARF, but do not
+    // assume its runtime class: reject unexpected objects before invoking any Managed method.
+    void *actual_class=api.object_get_class(login_controller);if(!actual_class){if(error)*error="touch controller has no Managed runtime class";return false;}
+    bool compatible=false;void *candidate=actual_class;for(size_t depth=0;candidate&&depth<64;++depth){if(candidate==login_class){compatible=true;break;}candidate=api.class_get_parent?api.class_get_parent(candidate):nullptr;}
+    if(!compatible){const char *actual_name=api.class_get_name?api.class_get_name(actual_class):nullptr;const char *actual_ns=api.class_get_namespace?api.class_get_namespace(actual_class):nullptr;if(error)*error=std::string("touch controller type mismatch: received ")+(actual_ns&&*actual_ns?std::string(actual_ns)+".":std::string())+(actual_name?actual_name:"<unknown>")+", expected _AT.UI.UILoginPageController";ASTRAE_LOGE("touch controller type mismatch: actual=%s.%s class=%p expected=%p",actual_ns?actual_ns:"",actual_name?actual_name:"<unknown>",actual_class,login_class);return false;}
+    ASTRAE_LOGI("touch controller type validated: instance=%p class=%p",login_controller,actual_class);
+    auto invoke_login_method=[&](const char *name,void **arguments)->bool{void *method=runtime.find_method(login_class,name,arguments?1:0);if(!method){if(error)*error=std::string("UILoginPageController method not found: ")+name;return false;}void *result=nullptr;std::string invoke_error;ASTRAE_LOGI("invoking UILoginPageController.%s on instance=%p method=%p",name,login_controller,method);if(!runtime.invoke(method,login_controller,arguments,&result,&invoke_error)){if(error)*error=std::string("UILoginPageController.")+name+" invocation failed: "+invoke_error;ASTRAE_LOGE("UILoginPageController.%s invocation failed: %s",name,invoke_error.c_str());return false;}ASTRAE_LOGI("UILoginPageController.%s invocation returned successfully",name);if(action)*action=std::strcmp(name,"EnterLobby")==0?InitialLobbyAction::EnterLobby:InitialLobbyAction::PlayFirstDay;return true;};
     bool ok=true;
-    if((content_bits&1ULL)!=0){ok=invoke_login_method("EnterLobby",nullptr);runtime.release(controller_handle);return ok;}
-    std::string lookup_error;const uint32_t row_handle=table_get_pinned(data_manager,0x3c8,0x0700a185ULL,&lookup_error);if(!row_handle){runtime.release(controller_handle);if(error&&!lookup_error.empty())*error="initial quest lookup unavailable: "+lookup_error;return true;}
-    void *row=runtime.target(row_handle);int32_t required_level=0;uint64_t reward_id=0;std::string getter_error;
-    if(row&&row_i32(row,"get_ReqAccountLevel",&required_level,&getter_error)&&required_level==8&&row_u64(row,"get_OneTimeReward_S",&reward_id,&getter_error)&&reward_id==0x0700a185ULL){void *arguments[1]={row};ok=invoke_login_method("PlayFirstDay",arguments);}
-    runtime.release(row_handle);runtime.release(controller_handle);return ok;
+    // This route is invoked synchronously from touch() while the controller and its
+    // DataManager remain rooted by the active Managed call stack. The quest row stays
+    // owned by its DataManager dictionary; borrowed access avoids temporary GCHandles.
+    if((content_bits&1ULL)!=0){ok=invoke_login_method("EnterLobby",nullptr);return ok;}
+    std::string lookup_error;void *row=table_get_borrowed(data_manager,0x3c8,0x0700a185ULL,&lookup_error);if(!row){if(error&&!lookup_error.empty())*error="initial quest lookup unavailable: "+lookup_error;return true;}
+    int32_t required_level=0;uint64_t reward_id=0;std::string getter_error;
+    if(row_i32(row,"get_ReqAccountLevel",&required_level,&getter_error)&&required_level==8&&row_u64(row,"get_OneTimeReward_S",&reward_id,&getter_error)&&reward_id==0x0700a185ULL){void *arguments[1]={row};ok=invoke_login_method("PlayFirstDay",arguments);}
+    return ok;
 }
 bool run_initial_lobby_route_from_store(void *login_controller,void *data_manager,InitialLobbyAction *action,std::string *error){return run_initial_lobby_route(login_controller,data_manager,store_content_bits(),action,error);}
 
 namespace {
 std::atomic<bool> g_touch_lobby_entered{false};
+std::mutex g_character99_metadata_mutex;
+std::unordered_set<std::string> g_character99_metadata_emitted;
+std::atomic<bool> g_character99_metadata_complete{false};
 std::atomic_flag g_touch_lobby_running=ATOMIC_FLAG_INIT;
 }
 bool touch_enter_lobby(void *login_controller,std::string *error){
+    ASTRAE_LOGI("touch_enter_lobby called: controller=%p",login_controller);
     if(error)error->clear();
     if(!login_controller){if(error)*error="touch replacement received a null UILoginPageController";return false;}
     if(g_touch_lobby_entered.load(std::memory_order_acquire))return true;
     if(g_touch_lobby_running.test_and_set(std::memory_order_acq_rel)){if(error)*error="lobby entry is already being dispatched";return false;}
     struct ClearFlag{std::atomic_flag &flag;~ClearFlag(){flag.clear(std::memory_order_release);}} clear{g_touch_lobby_running};
-    // This build intentionally bypasses the original first-day tutorial branch. The bit is
-    // also persisted in both local stores during bootstrap; using 1 here protects against
-    // an older or not-yet-opened compatibility store without blocking the lobby route.
-    int changed=0;
-    (void)store_skip_first_day(&changed);
-    InitialLobbyAction action=InitialLobbyAction::None;
-    if(!run_initial_lobby_route(login_controller,nullptr,UINT64_C(1),&action,error))return false;
-    if(action!=InitialLobbyAction::EnterLobby){if(error)*error="minimal touch replacement did not dispatch EnterLobby";return false;}
-    g_touch_lobby_entered.store(true,std::memory_order_release);
-    return true;
+    auto &runtime=il2cpp::Runtime::instance();const auto &api=runtime.api();
+    il2cpp::Runtime::ThreadScope thread(runtime);if(!thread.ok()){if(error)*error="cannot attach touch callback to IL2CPP: "+thread.error();ASTRAE_LOGE("touch preflight cannot attach to IL2CPP: %s",thread.error().c_str());return false;}
+    // These offsets are directly confirmed by the reference ELF's touch(controller, method):
+    // account = controller + 0xb0; DataManager = controller + 0x10.
+    void *data_manager=load_pointer(login_controller,0x10);void *account=load_pointer(login_controller,0xb0);
+    ASTRAE_LOGI("touch managed fields recovered: controller=%p data_manager=%p account=%p source_offsets={DataManager:0x10,Account:0xb0}",login_controller,data_manager,account);
+    if(!data_manager||!account){if(error)*error=std::string("touch controller is missing required managed state: ")+(data_manager?"Account(controller+0xb0)":"DataManager(controller+0x10)");ASTRAE_LOGE("touch preflight rejected: DataManager=%p Account=%p; no lobby method will be invoked",data_manager,account);return false;}
+    if(!api.object_get_class){if(error)*error="il2cpp_object_get_class is unavailable while validating lobby state";return false;}
+    void *dm_class=api.object_get_class(data_manager);void *account_class=api.object_get_class(account);
+    if(!dm_class||!account_class){if(error)*error="controller DataManager or Account is not a valid managed object";ASTRAE_LOGE("touch preflight rejected invalid Managed objects: DataManager.class=%p Account.class=%p",dm_class,account_class);return false;}
+    const char *dm_name=api.class_get_name?api.class_get_name(dm_class):nullptr;const char *account_name=api.class_get_name?api.class_get_name(account_class):nullptr;
+    ASTRAE_LOGI("touch managed state validated: DataManager.class=%s Account.class=%s",dm_name?dm_name:"<unknown>",account_name?account_name:"<unknown>");
+    if(!g_character99_metadata_complete.load(std::memory_order_acquire)){
+        const char *dm_ns=api.class_get_namespace?api.class_get_namespace(dm_class):nullptr;
+        const char *account_ns=api.class_get_namespace?api.class_get_namespace(account_class):nullptr;
+        const char *dm_type=api.class_get_name?api.class_get_name(dm_class):nullptr;
+        const char *account_type=api.class_get_name?api.class_get_name(account_class):nullptr;
+        const std::string dm_full=(dm_ns&&*dm_ns?std::string(dm_ns)+".":std::string())+(dm_type?dm_type:"DataManager");
+        const std::string account_full=(account_ns&&*account_ns?std::string(account_ns)+".":std::string())+(account_type?account_type:"AccountManager");
+        const std::string types[]={dm_full,account_full,"_AT.Core.DataSheet.Character_LevelFactorData","_AT.Core.DataSheet.Character_LevelFactorXmlData","_AT.Core.DataSheet.GrowthRecipeRoot","_AT.Core.DataSheet.GrowthRecipeData","_AT.Core.DataSheet.GrowthRecipeXmlData"};
+        for(const auto &type:types){
+            {std::lock_guard<std::mutex> lock(g_character99_metadata_mutex);if(g_character99_metadata_emitted.count(type))continue;}
+            const std::string description=runtime.describe_class(type,192,192);
+            ASTRAE_LOGI("character99 IL2CPP metadata snapshot begin: %s",type.c_str());
+            std::istringstream metadata_lines(description);std::string metadata_line;size_t metadata_line_index=0;while(std::getline(metadata_lines,metadata_line)){ASTRAE_LOGI("character99 metadata type=%s line=%zu: %s",type.c_str(),metadata_line_index++,metadata_line.c_str());}
+            ASTRAE_LOGI("character99 IL2CPP metadata snapshot end: %s",type.c_str());
+            if(description.rfind("class_lookup_failed",0)!=0&&description.rfind("thread_attach_failed",0)!=0){std::lock_guard<std::mutex> lock(g_character99_metadata_mutex);g_character99_metadata_emitted.insert(type);}
+        }
+        bool complete=false;{std::lock_guard<std::mutex> lock(g_character99_metadata_mutex);complete=g_character99_metadata_emitted.size()>=sizeof(types)/sizeof(types[0]);}
+        if(complete){g_character99_metadata_complete.store(true,std::memory_order_release);ASTRAE_LOGI("character99 IL2CPP metadata snapshot complete; DataManager, Account, and all progression types resolved");}
+        else ASTRAE_LOGW("character99 IL2CPP metadata snapshot incomplete; only unresolved classes will be retried on the next touch callback");
+    }
+    // The hook runs synchronously inside the managed UILoginPageController.touch call on
+    // Unity's already-attached main thread. The controller is still strongly reachable from
+    // that active managed invocation, and DataManager/Account are fields reachable from it.
+    // Do not create/free GCHandles here: this target Unity build's gchandle_free path crashes
+    // when these temporary handles are released (observed at libil2cpp+0x23a6574). Keeping
+    // these borrowed references within this stack frame is sufficient; no managed allocation
+    // or asynchronous hand-off occurs in this preflight path.
+    ASTRAE_LOGI("touch preflight using borrowed managed roots from active invocation; GCHandle retain/free intentionally skipped");
+    std::string helper_error;
+    if(!artifact_capacity_tables(data_manager,&helper_error)){if(error)*error="reference touch step 1/15 artifact_capacity_tables failed: "+helper_error;ASTRAE_LOGE("reference touch step 1/15 artifact_capacity_tables failed: %s",helper_error.c_str());return false;}
+    ASTRAE_LOGI("reference touch step 1/15 completed: artifact_capacity_tables");
+    // Do not infer success from a helper existing in this project: the original invokes
+    // these operations in a strict order and checks each result before dispatch. The
+    // account bootstrap also contains many nested restorers, listed individually below.
+    constexpr const char *implemented_not_integrated="permanent_raid_tables, battle_multiple_tables, office_wire_probe, installation_native_tables";
+    constexpr const char *missing="character99_tables, seed_ticket_defaults/seed_table_defaults, permanent_raid_tables(integration pending), battle_multiple_tables(integration pending), custom_resource_tables, custom_item_tables, signed_exchange_tables, earned_unlocks/sync_unlocks, bootstrap(account){restore_balances,restore_foundation,pack_objects_cache,local_mail_count,restore_gacha,restore_farming_cache,restore_raid_cache,date_restore,installation_restore,guide_restore_cache,restore_daily_cache,restore_pack_missions,restore_puzzles}, local_account_event_login, guide_restore_cache(account,true)/initialize_guide_cache";
+    if(error)*error=std::string("reference touch initialization is incomplete; EnterLobby suppressed; missing: ")+missing;
+    ASTRAE_LOGE("lobby dispatch blocked after object validation: missing required restorations: %s",missing);
+    ASTRAE_LOGW("already reconstructed but not yet integrated into the verified touch sequence: %s",implemented_not_integrated);
+    ASTRAE_LOGI("recovered live Managed roots are valid: DataManager=%p Account=%p; no EnterLobby/PlayFirstDay call was made",data_manager,account);
+    return false;
 }
 
 }

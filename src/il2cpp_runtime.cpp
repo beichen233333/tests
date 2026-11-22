@@ -1,4 +1,5 @@
 #include "il2cpp_runtime.hpp"
+#include "debug_log.hpp"
 #include <algorithm>
 #include <cstring>
 #include <sstream>
@@ -53,6 +54,11 @@ void Runtime::resolve_symbols(){
     ASTRAE_BIND(class_from_system_type,"il2cpp_class_from_system_type");
     ASTRAE_BIND(type_get_object,"il2cpp_type_get_object");
     ASTRAE_BIND(type_get_name,"il2cpp_type_get_name");
+    ASTRAE_BIND(class_get_fields,"il2cpp_class_get_fields");
+    ASTRAE_BIND(field_get_name,"il2cpp_field_get_name");
+    ASTRAE_BIND(class_get_methods,"il2cpp_class_get_methods");
+    ASTRAE_BIND(method_get_param,"il2cpp_method_get_param");
+    ASTRAE_BIND(method_get_return_type,"il2cpp_method_get_return_type");
     ASTRAE_BIND(class_get_field_from_name,"il2cpp_class_get_field_from_name");
     ASTRAE_BIND(field_get_offset,"il2cpp_field_get_offset");
     ASTRAE_BIND(field_get_type,"il2cpp_field_get_type");
@@ -85,8 +91,26 @@ void Runtime::resolve_symbols(){
 #undef ASTRAE_BIND
     status_.resolved_symbols=n;
     status_.missing_required=0;
-    const void *required[]={reinterpret_cast<const void*>(api_.domain_get),reinterpret_cast<const void*>(api_.domain_get_assemblies),reinterpret_cast<const void*>(api_.assembly_get_image),reinterpret_cast<const void*>(api_.class_from_name),reinterpret_cast<const void*>(api_.class_get_field_from_name),reinterpret_cast<const void*>(api_.field_get_offset),reinterpret_cast<const void*>(api_.field_get_type),reinterpret_cast<const void*>(api_.class_from_type),reinterpret_cast<const void*>(api_.class_get_method_from_name),reinterpret_cast<const void*>(api_.runtime_invoke),reinterpret_cast<const void*>(api_.object_new),reinterpret_cast<const void*>(api_.object_get_class),reinterpret_cast<const void*>(api_.class_is_valuetype),reinterpret_cast<const void*>(api_.field_get_value),reinterpret_cast<const void*>(api_.class_get_name),reinterpret_cast<const void*>(api_.thread_attach),reinterpret_cast<const void*>(api_.thread_detach)};
-    for(auto p:required)if(!p)++status_.missing_required;
+    const struct RequiredExport{const char *name;const void *address;} required[]={
+        {"il2cpp_domain_get",reinterpret_cast<const void*>(api_.domain_get)},
+        {"il2cpp_domain_get_assemblies",reinterpret_cast<const void*>(api_.domain_get_assemblies)},
+        {"il2cpp_assembly_get_image",reinterpret_cast<const void*>(api_.assembly_get_image)},
+        {"il2cpp_class_from_name",reinterpret_cast<const void*>(api_.class_from_name)},
+        {"il2cpp_class_get_field_from_name",reinterpret_cast<const void*>(api_.class_get_field_from_name)},
+        {"il2cpp_field_get_offset",reinterpret_cast<const void*>(api_.field_get_offset)},
+        {"il2cpp_field_get_type",reinterpret_cast<const void*>(api_.field_get_type)},
+        {"il2cpp_class_from_type",reinterpret_cast<const void*>(api_.class_from_type)},
+        {"il2cpp_class_get_method_from_name",reinterpret_cast<const void*>(api_.class_get_method_from_name)},
+        {"il2cpp_runtime_invoke",reinterpret_cast<const void*>(api_.runtime_invoke)},
+        {"il2cpp_object_new",reinterpret_cast<const void*>(api_.object_new)},
+        {"il2cpp_object_get_class",reinterpret_cast<const void*>(api_.object_get_class)},
+        {"il2cpp_class_is_valuetype",reinterpret_cast<const void*>(api_.class_is_valuetype)},
+        {"il2cpp_field_get_value",reinterpret_cast<const void*>(api_.field_get_value)},
+        {"il2cpp_class_get_name",reinterpret_cast<const void*>(api_.class_get_name)},
+        {"il2cpp_thread_attach",reinterpret_cast<const void*>(api_.thread_attach)},
+        {"il2cpp_thread_detach",reinterpret_cast<const void*>(api_.thread_detach)}
+    };
+    for(const auto &entry:required){if(!entry.address){++status_.missing_required;ASTRAE_LOGE("required IL2CPP export missing: %s",entry.name);}else ASTRAE_LOGD("required IL2CPP export resolved: %s at %p",entry.name,entry.address);}
     status_.can_read=api_.object_get_class&&api_.class_from_type&&api_.field_get_type&&api_.field_get_offset&&api_.field_get_value&&api_.class_is_valuetype&&api_.gchandle_new&&api_.gchandle_free;
     status_.can_build=api_.gchandle_new&&api_.gchandle_get_target&&api_.gchandle_free&&api_.gc_wbarrier_set_field&&api_.array_new&&api_.string_new&&api_.value_box&&api_.class_value_size&&api_.field_get_type&&api_.class_from_type&&api_.object_new&&api_.runtime_invoke;
     status_.can_generic_reflection=api_.class_get_type&&api_.type_get_object&&api_.class_from_system_type&&api_.object_get_class&&api_.runtime_invoke;
@@ -96,8 +120,26 @@ void Runtime::resolve_symbols(){
 bool Runtime::initialize_for_testing(const Api &api,void *domain){
     std::lock_guard<std::mutex> lock(mutex_);
     api_=api;domain_=domain;handle_=nullptr;status_={};status_.loaded=true;status_.initialized=domain_!=nullptr;status_.core_network_class_ready=domain_!=nullptr;status_.library_path="mock-il2cpp-runtime";status_.assembly_count=1;
-    const void *required[]={reinterpret_cast<const void*>(api_.domain_get),reinterpret_cast<const void*>(api_.domain_get_assemblies),reinterpret_cast<const void*>(api_.assembly_get_image),reinterpret_cast<const void*>(api_.class_from_name),reinterpret_cast<const void*>(api_.class_get_field_from_name),reinterpret_cast<const void*>(api_.field_get_offset),reinterpret_cast<const void*>(api_.field_get_type),reinterpret_cast<const void*>(api_.class_from_type),reinterpret_cast<const void*>(api_.class_get_method_from_name),reinterpret_cast<const void*>(api_.runtime_invoke),reinterpret_cast<const void*>(api_.object_new),reinterpret_cast<const void*>(api_.object_get_class),reinterpret_cast<const void*>(api_.class_is_valuetype),reinterpret_cast<const void*>(api_.field_get_value),reinterpret_cast<const void*>(api_.class_get_name),reinterpret_cast<const void*>(api_.thread_attach),reinterpret_cast<const void*>(api_.thread_detach)};
-    for(auto p:required)if(!p)++status_.missing_required;
+    const struct RequiredExport{const char *name;const void *address;} required[]={
+        {"il2cpp_domain_get",reinterpret_cast<const void*>(api_.domain_get)},
+        {"il2cpp_domain_get_assemblies",reinterpret_cast<const void*>(api_.domain_get_assemblies)},
+        {"il2cpp_assembly_get_image",reinterpret_cast<const void*>(api_.assembly_get_image)},
+        {"il2cpp_class_from_name",reinterpret_cast<const void*>(api_.class_from_name)},
+        {"il2cpp_class_get_field_from_name",reinterpret_cast<const void*>(api_.class_get_field_from_name)},
+        {"il2cpp_field_get_offset",reinterpret_cast<const void*>(api_.field_get_offset)},
+        {"il2cpp_field_get_type",reinterpret_cast<const void*>(api_.field_get_type)},
+        {"il2cpp_class_from_type",reinterpret_cast<const void*>(api_.class_from_type)},
+        {"il2cpp_class_get_method_from_name",reinterpret_cast<const void*>(api_.class_get_method_from_name)},
+        {"il2cpp_runtime_invoke",reinterpret_cast<const void*>(api_.runtime_invoke)},
+        {"il2cpp_object_new",reinterpret_cast<const void*>(api_.object_new)},
+        {"il2cpp_object_get_class",reinterpret_cast<const void*>(api_.object_get_class)},
+        {"il2cpp_class_is_valuetype",reinterpret_cast<const void*>(api_.class_is_valuetype)},
+        {"il2cpp_field_get_value",reinterpret_cast<const void*>(api_.field_get_value)},
+        {"il2cpp_class_get_name",reinterpret_cast<const void*>(api_.class_get_name)},
+        {"il2cpp_thread_attach",reinterpret_cast<const void*>(api_.thread_attach)},
+        {"il2cpp_thread_detach",reinterpret_cast<const void*>(api_.thread_detach)}
+    };
+    for(const auto &entry:required){if(!entry.address){++status_.missing_required;ASTRAE_LOGE("required IL2CPP export missing: %s",entry.name);}else ASTRAE_LOGD("required IL2CPP export resolved: %s at %p",entry.name,entry.address);}
     status_.can_read=api_.object_get_class&&api_.class_from_type&&api_.field_get_type&&api_.field_get_offset&&api_.field_get_value&&api_.class_is_valuetype&&api_.gchandle_new&&api_.gchandle_free;
     status_.can_build=api_.gchandle_new&&api_.gchandle_get_target&&api_.gchandle_free&&api_.gc_wbarrier_set_field&&api_.array_new&&api_.string_new&&api_.value_box&&api_.class_value_size&&api_.field_get_type&&api_.class_from_type&&api_.object_new&&api_.runtime_invoke;
     status_.can_generic_reflection=api_.class_get_type&&api_.type_get_object&&api_.class_from_system_type&&api_.object_get_class&&api_.runtime_invoke;
@@ -111,14 +153,14 @@ bool Runtime::initialize(std::string *error){
     if(status_.initialized)return true;
 #if defined(__ANDROID__)
     if(handle_){dlclose(handle_);handle_=nullptr;}
-    handle_=dlopen("libil2cpp.so",RTLD_NOW|RTLD_NOLOAD);
-    if(!handle_){status_.error="libil2cpp.so is not loaded in this process";if(error)*error=status_.error;return false;}
-    status_.loaded=true;status_.library_path="libil2cpp.so";resolve_symbols();
-    if(status_.missing_required){status_.error="required IL2CPP exports are missing";if(error)*error=status_.error;return false;}
-    domain_=api_.domain_get();
-    if(!domain_){status_.error="il2cpp_domain_get returned null";if(error)*error=status_.error;return false;}
+    ASTRAE_LOGD("attempting dlopen(libil2cpp.so, RTLD_NOLOAD)");handle_=dlopen("libil2cpp.so",RTLD_NOW|RTLD_NOLOAD);
+    if(!handle_){const char *detail=dlerror();status_.error="libil2cpp.so is not loaded in this process";if(detail)status_.error+=std::string(": ")+detail;ASTRAE_LOGD("libil2cpp not available yet: %s",status_.error.c_str());if(error)*error=status_.error;return false;}
+    status_.loaded=true;status_.library_path="libil2cpp.so";ASTRAE_LOGI("libil2cpp.so handle acquired: %p",handle_);resolve_symbols();
+    if(status_.missing_required){status_.error="required IL2CPP exports are missing";ASTRAE_LOGE("IL2CPP symbol resolution incomplete: resolved=%zu missing_required=%zu",status_.resolved_symbols,status_.missing_required);if(error)*error=status_.error;return false;}
+    ASTRAE_LOGI("all required IL2CPP exports resolved: total=%zu",status_.resolved_symbols);domain_=api_.domain_get();
+    if(!domain_){status_.error="il2cpp_domain_get returned null";ASTRAE_LOGD("libil2cpp is loaded but IL2CPP domain is not initialized yet");if(error)*error=status_.error;return false;}
     size_t count=0;api_.domain_get_assemblies(domain_,&count);status_.assembly_count=count;
-    status_.initialized=true;status_.error.clear();return true;
+    status_.initialized=true;status_.error.clear();ASTRAE_LOGI("IL2CPP initialized: domain=%p assemblies=%zu",domain_,count);return true;
 #else
     status_.error="IL2CPP runtime binding is available only inside Android game process";
     if(error)*error=status_.error;return false;
@@ -126,11 +168,24 @@ bool Runtime::initialize(std::string *error){
 }
 bool Runtime::initialize_wait(uint32_t timeout_ms,uint32_t poll_interval_ms,std::string *error){
 #if defined(__ANDROID__)
-    if(timeout_ms==0)timeout_ms=120000;if(poll_interval_ms==0)poll_interval_ms=100;auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout_ms);std::string last;
-    bool ready=false;
-    do{if(initialize(&last)){ready=true;break;}if(last.find("required IL2CPP exports are missing")!=std::string::npos){if(error)*error=last;return false;}auto now=std::chrono::steady_clock::now();if(now>=deadline)break;auto left=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-now).count();std::this_thread::sleep_for(std::chrono::milliseconds(std::min<uint32_t>(poll_interval_ms,static_cast<uint32_t>(std::max<int64_t>(1,left)))));}while(std::chrono::steady_clock::now()<deadline);
-    if(ready){while(std::chrono::steady_clock::now()<deadline){ThreadScope scope(*this);if(scope.ok()){std::string class_error;if(find_class("_AT.Network.NetworkHandler",&class_error)){std::lock_guard<std::mutex> lock(mutex_);status_.core_network_class_ready=true;status_.error.clear();if(error)error->clear();return true;}last=class_error;}else last=scope.error();auto now=std::chrono::steady_clock::now();if(now>=deadline)break;auto left=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-now).count();std::this_thread::sleep_for(std::chrono::milliseconds(std::min<uint32_t>(poll_interval_ms,static_cast<uint32_t>(std::max<int64_t>(1,left)))));}}
-    last="timed out waiting for libil2cpp.so / _AT.Network.NetworkHandler"+(last.empty()?std::string():std::string("; last error: ")+last);{std::lock_guard<std::mutex> lock(mutex_);status_.error=last;}if(error)*error=last;return false;
+    if(timeout_ms==0)timeout_ms=120000;if(poll_interval_ms==0)poll_interval_ms=100;
+    ASTRAE_LOGI("IL2CPP readiness wait started: timeout=%u ms poll=%u ms",timeout_ms,poll_interval_ms);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout_ms);std::string last;auto next_log=std::chrono::steady_clock::now();bool ready=false;uint64_t attempts=0;
+    do{
+        ++attempts;if(initialize(&last)){ready=true;break;}
+        if(last.find("required IL2CPP exports are missing")!=std::string::npos){Status snapshot;{std::lock_guard<std::mutex> lock(mutex_);snapshot=status_;}ASTRAE_LOGE("IL2CPP exports are incomplete; not retrying: %s; resolved=%zu missing_required=%zu",last.c_str(),snapshot.resolved_symbols,snapshot.missing_required);if(error)*error=last;return false;}
+        const auto now=std::chrono::steady_clock::now();if(now>=next_log){ASTRAE_LOGI("waiting for libil2cpp/domain; attempts=%llu last=%s",static_cast<unsigned long long>(attempts),last.c_str());next_log=now+std::chrono::seconds(5);}
+        if(now>=deadline)break;const auto left=std::chrono::duration_cast<std::chrono::milliseconds>(deadline-now).count();std::this_thread::sleep_for(std::chrono::milliseconds(std::min<uint32_t>(poll_interval_ms,static_cast<uint32_t>(std::max<int64_t>(1,left)))));
+    }while(std::chrono::steady_clock::now()<deadline);
+    if(!ready){last="timed out waiting for libil2cpp.so and an initialized IL2CPP domain"+(last.empty()?std::string():std::string("; last error: ")+last);Status snapshot;{std::lock_guard<std::mutex> lock(mutex_);status_.error=last;snapshot=status_;}ASTRAE_LOGE("IL2CPP readiness wait failed after %llu attempts: %s; loaded=%s resolved=%zu missing_required=%zu",static_cast<unsigned long long>(attempts),last.c_str(),snapshot.loaded?"true":"false",snapshot.resolved_symbols,snapshot.missing_required);if(error)*error=last;return false;}
+    // A lobby-only build must not be blocked by NetworkHandler type initialization.
+    // The network class is diagnostic/optional here; #3 only needs the UI login controller.
+    bool network_ready=false;std::string network_error;{
+        ThreadScope scope(*this);if(scope.ok())network_ready=find_class("_AT.Network.NetworkHandler",&network_error)!=nullptr;else network_error=scope.error();
+    }
+    {std::lock_guard<std::mutex> lock(mutex_);status_.core_network_class_ready=network_ready;status_.error.clear();}
+    ASTRAE_LOGI("IL2CPP domain is ready; NetworkHandler=%s%s%s; proceeding with offline lobby initialization",network_ready?"ready":"not-yet-ready",network_error.empty()?"":"; detail=",network_error.c_str());
+    if(error)error->clear();return true;
 #else
     (void)timeout_ms;(void)poll_interval_ms;return initialize(error);
 #endif
@@ -189,6 +244,23 @@ void *Runtime::find_class(const std::string &raw_name,std::string *error) const 
 }
 void *Runtime::find_field(void *klass,const std::string &name) const {for(void *k=klass;k;k=api_.class_get_parent?api_.class_get_parent(k):nullptr){void *f=api_.class_get_field_from_name?api_.class_get_field_from_name(k,name.c_str()):nullptr;if(f)return f;}return nullptr;}
 void *Runtime::find_method(void *klass,const std::string &name,int argc) const {for(void *k=klass;k;k=api_.class_get_parent?api_.class_get_parent(k):nullptr){void *m=api_.class_get_method_from_name?api_.class_get_method_from_name(k,name.c_str(),argc):nullptr;if(m)return m;}return nullptr;}
+std::string Runtime::describe_class(const std::string &full_name,size_t max_fields,size_t max_methods) const {
+    std::ostringstream out;std::string lookup_error;void *klass=find_class(full_name,&lookup_error);if(!klass){out<<"class_lookup_failed name="<<full_name<<" error="<<lookup_error;return out.str();}
+    ThreadScope scope(const_cast<Runtime&>(*this));if(!scope.ok()){out<<"thread_attach_failed error="<<scope.error();return out.str();}
+    const Api &a=api_;const char *name=a.class_get_name?a.class_get_name(klass):nullptr;const char *ns=a.class_get_namespace?a.class_get_namespace(klass):nullptr;
+    out<<"class="<<(ns&&*ns?std::string(ns)+".":std::string())<<(name?name:"<unknown>")<<" instance_size="<<(a.class_instance_size?a.class_instance_size(klass):0);
+    if(!a.class_get_fields||!a.field_get_name){out<<" fields=unavailable";}else{
+        size_t count=0;void *owner=klass;std::unordered_set<void*> visited;
+        for(size_t depth=0;owner&&depth<8&&count<max_fields&&visited.insert(owner).second;++depth,owner=a.class_get_parent?a.class_get_parent(owner):nullptr){void *iter=nullptr,*field=nullptr;while(count<max_fields&&(field=a.class_get_fields(owner,&iter))!=nullptr){const char *field_name=a.field_get_name(field);const size_t offset=a.field_get_offset?a.field_get_offset(field):0;char *type_name=nullptr;if(a.type_get_name&&a.field_get_type)type_name=a.type_get_name(a.field_get_type(field));out<<"\n field["<<count<<"] name="<<(field_name?field_name:"<unknown>")<<" offset=0x"<<std::hex<<offset<<std::dec<<" type="<<(type_name?type_name:"<unknown>");if(type_name&&a.free_mem)a.free_mem(type_name);++count;}}
+        out<<"\n fields_emitted="<<count;
+    }
+    if(!a.class_get_methods||!a.method_get_name||!a.method_get_param_count){out<<"\n methods=unavailable";}else{
+        size_t count=0;void *owner=klass;std::unordered_set<void*> visited;
+        for(size_t depth=0;owner&&depth<8&&count<max_methods&&visited.insert(owner).second;++depth,owner=a.class_get_parent?a.class_get_parent(owner):nullptr){void *iter=nullptr,*method=nullptr;while(count<max_methods&&(method=a.class_get_methods(owner,&iter))!=nullptr){const char *method_name=a.method_get_name(method);uint32_t argc=a.method_get_param_count(method);char *return_name=nullptr;if(a.method_get_return_type&&a.type_get_name)return_name=a.type_get_name(a.method_get_return_type(method));out<<"\n method["<<count<<"] name="<<(method_name?method_name:"<unknown>")<<" argc="<<argc<<" return="<<(return_name?return_name:"<unknown>");if(return_name&&a.free_mem)a.free_mem(return_name);if(a.method_get_param&&a.type_get_name){for(uint32_t i=0;i<argc&&i<16;++i){const void *param=a.method_get_param(method,i);char *param_name=param?a.type_get_name(param):nullptr;out<<" arg"<<i<<"="<<(param_name?param_name:"<unknown>");if(param_name&&a.free_mem)a.free_mem(param_name);}}++count;}}
+        out<<"\n methods_emitted="<<count;
+    }
+    return out.str();
+}
 void *Runtime::generic_argument_class(void *closed_generic_class,size_t index,std::string *error) const {
     if(sizeof(void*)!=8||!available()||!closed_generic_class||!api_.class_get_type||!api_.type_get_object||!api_.class_from_system_type||!api_.object_get_class||!api_.runtime_invoke){if(error)*error="generic reflection exports are unavailable or ABI is not 64-bit";return nullptr;}
     ThreadScope scope(const_cast<Runtime&>(*this));if(!scope.ok()){if(error)*error=scope.error();return nullptr;}

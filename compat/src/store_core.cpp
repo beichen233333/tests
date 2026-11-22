@@ -742,6 +742,23 @@ int store_open(const char *directory) {
     if (!valid_unsigned_decimal(content_bits->valuestring, &bits) || initial_index->valueint < 0 || initial_index->valueint >= 128) {
         set_error("invalid tutorial values; retained"); return 0;
     }
+    // Migrate saves written by the earlier Phase-1 bootstrap, which unconditionally
+    // set bit 0 and recorded first_day_skipped=true. That synthetic state bypassed
+    // the reference touch() preparation chain and could dispatch EnterLobby too early.
+    cJSON *synthetic_skip = object_item(g_document, "first_day_skipped");
+    if (cJSON_IsTrue(synthetic_skip)) {
+        cJSON *snapshot = cJSON_Duplicate(g_document, 1);
+        if (!snapshot) { set_error("first-day skip migration snapshot"); return 0; }
+        char corrected[32];
+        std::snprintf(corrected, sizeof(corrected), "%llu", static_cast<unsigned long long>(bits & ~UINT64_C(1)));
+        if (!put_string(tutorial, "content_bits", corrected)) {
+            cJSON_Delete(g_document); g_document = snapshot; set_error("first-day skip migration update"); return 0;
+        }
+        cJSON_DeleteItemFromObjectCaseSensitive(g_document, "first_day_skipped");
+        if (!store_commit()) { cJSON_Delete(g_document); g_document = snapshot; set_error("first-day skip migration commit"); return 0; }
+        cJSON_Delete(snapshot);
+        bits &= ~UINT64_C(1);
+    }
     (void)bits;
     cJSON *direct_index = object_item(g_document, "substory_direct_index");
     if (cJSON_IsTrue(direct_index)) return 1;

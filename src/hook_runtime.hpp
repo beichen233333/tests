@@ -11,6 +11,7 @@ bool install_local_request_hook(std::string *error=nullptr);
 // Installs the Phase-1 minimal #3 touch replacement that routes directly to EnterLobby.
 bool install_touch_hook(std::string *error=nullptr);
 bool touch_hook_installed();
+uint64_t touch_hook_call_count();
 size_t install_ui_passthrough_hooks(std::string *error=nullptr);
 // Direct replacements intentionally have no original-function fallback. The
 // caller must supply a complete replacement for the selected original hook.

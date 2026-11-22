@@ -54,7 +54,10 @@ jobs:
           name: libastraeoffline-android-arm64-v8a-${{ github.ref_name }}
           path: |
             artifacts/android-arm64-v8a/libastraeoffline.so
+            artifacts/android-arm64-v8a/libastraeoffline.so.debug
             artifacts/android-arm64-v8a/SHA256.txt
+            artifacts/android-arm64-v8a/ELF_REPORT.txt
+            artifacts/android-arm64-v8a/SIZE_REPORT.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 30
@@ -66,4 +69,7 @@ jobs:
           generate_release_notes: true
           files: |
             artifacts/android-arm64-v8a/libastraeoffline.so
+            artifacts/android-arm64-v8a/libastraeoffline.so.debug
             artifacts/android-arm64-v8a/SHA256.txt
+            artifacts/android-arm64-v8a/ELF_REPORT.txt
+            artifacts/android-arm64-v8a/SIZE_REPORT.txt

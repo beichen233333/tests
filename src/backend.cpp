@@ -1,5 +1,6 @@
 #include "backend.hpp"
 #include "embedded_assets.hpp"
+#include "debug_log.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -48,22 +49,25 @@ static uint64_t make_uid(const J &state){uint64_t n=u64(state,"NextServerId",100
 Backend &Backend::instance(){static Backend b;return b;}
 int Backend::init(const std::string &save_dir,const std::string &table_dir){
     std::lock_guard<std::mutex> lk(mutex_);
-    if(initialized_)return 1;
-    save_dir_=save_dir.empty()?"/sdcard/Android/data/com.nc.astraeoratio.singleplayer/files/AstraeOffline/SinglePlayer":save_dir;
+    if(initialized_){ASTRAE_LOGD("Backend::init skipped; backend is already initialized");return 1;}
+    save_dir_=save_dir.empty()?"/storage/emulated/0/Android/data/com.nc.astraeoratio.singleplayer/files/AstraeOffline/SinglePlayer":save_dir;
     table_dir_=table_dir.empty()?"assets":table_dir;
     save_path_=join_path(save_dir_,"save.json");
-    if(!mkdirs(save_dir_))return 0;
-    if(!load_schemas())return 0;
-    if(!load_protocols())return 0;
-    load_tables();
-    load_rules();
-    if(!load_store()){seed_defaults();if(!commit_store())return 0;}
-    // Phase-1 basic lobby mode: ContentBits bit 0 means the first-day gate is complete.
-    // Persist it so AccountLogin and all later TutorialInfo responses agree with Hook #3.
+    ASTRAE_LOGI("Backend init: save_dir=%s table_dir=%s",save_dir_.c_str(),table_dir_.c_str());
+    if(!mkdirs(save_dir_)){ASTRAE_LOGE("Backend cannot create save directory %s: errno=%d (%s)",save_dir_.c_str(),errno,std::strerror(errno));return 0;}
+    ASTRAE_LOGI("Backend save directory ready");
+    if(!load_schemas()){ASTRAE_LOGE("Backend load_schemas failed from %s/schema/wire_shapes.json or embedded assets",table_dir_.c_str());return 0;}
+    ASTRAE_LOGI("Backend schemas loaded: %zu",schemas_.size());
+    if(!load_protocols()){ASTRAE_LOGE("Backend load_protocols failed from %s/schema/protocol_index.json or embedded assets",table_dir_.c_str());return 0;}
+    ASTRAE_LOGI("Backend protocol catalog loaded: %zu",protocol_routes_.size());
+    load_tables();ASTRAE_LOGI("Backend embedded/external tables loaded");
+    load_rules();ASTRAE_LOGI("Backend rules loaded");
+    if(!load_store()){ASTRAE_LOGW("Backend save missing/unavailable; creating default offline save at %s",save_path_.c_str());seed_defaults();if(!commit_store()){ASTRAE_LOGE("Backend could not commit new default save at %s: errno=%d (%s)",save_path_.c_str(),errno,std::strerror(errno));return 0;}}
+    // Never synthesize the first-day completion bit. The reference touch() performs
+    // account/table/cache restoration before choosing EnterLobby versus PlayFirstDay.
+    // Marking bit 0 here skips that flow and can enter the lobby with incomplete state.
     bool startup_changed=false;
     if(!state_["TutorialInfo"].is_object())state_["TutorialInfo"]=j_obj();
-    const uint64_t content_bits=state_["TutorialInfo"]["ContentBits"].as_u64(0);
-    if((content_bits&UINT64_C(1))==0){state_["TutorialInfo"]["ContentBits"]=content_bits|UINT64_C(1);startup_changed=true;}
     if(!state_["characters"].is_array())state_["characters"]=j_arr();
     if(state_["characters"].size()==0){
         const uint64_t starter_server_id=std::max<uint64_t>(100000,state_["NextServerId"].as_u64(100000));
@@ -83,7 +87,7 @@ int Backend::init(const std::string &save_dir,const std::string &table_dir){
         J formation=j_obj();formation["Index"]=int64_t(0);formation["CharacterTableIds"]=j_arr();formation["CharacterTableIds"].push_back(lobby_character_id);formation["VignetteTableIds"]=j_arr();formation["Name"]="Formation 1";state_["formations"].push_back(std::move(formation));startup_changed=true;
     }
     if(startup_changed&&!commit_store())return 0;
-    initialized_=true;
+    initialized_=true;ASTRAE_LOGI("Backend initialized: save=%s characters=%zu formations=%zu",save_path_.c_str(),state_["characters"].size(),state_["formations"].size());
     return 1;
 }
 void Backend::shutdown(){std::lock_guard<std::mutex> lk(mutex_);if(initialized_)commit_store();initialized_=false;}
@@ -136,7 +140,7 @@ bool Backend::load_tables(){
     return !tables_.empty();
 }
 bool Backend::load_rules(){rules_=j_obj();std::string s;if(read_file(join_path(table_dir_,"rules.json"),s)){try{J v=json::parse(s);if(v.is_object()){rules_=std::move(v);return true;}}catch(...){}}return false;}
-void Backend::seed_defaults(){state_=j_obj();state_["SchemaVersion"]=3;state_["Account"]=default_account();state_["inventory"]=j_arr();state_["characters"]=j_arr();state_["vignettes"]=j_arr();state_["artifacts"]=j_arr();state_["runes"]=j_arr();state_["rune_stock"]=j_arr();state_["tickets"]=j_arr();state_["costumes"]=j_arr();state_["mails"]=j_arr();state_["ReceiptInfos"]=j_arr();state_["quests"]=j_obj();state_["formations"]=j_arr();state_["gacha_state"]=j_obj();state_["GachaAdjustPointInfos"]=j_arr();state_["RuneGrantInfos"]=j_arr();state_["ClaimedMailIds"]=j_arr();state_["ClaimedGuideMissionTaskIds"]=j_arr();state_["ClaimedFavorRewardIds"]=j_arr();state_["TutorialInfo"]=j_obj();state_["TutorialInfo"]["InitialIndex"]=int64_t(0);state_["TutorialInfo"]["ContentBits"]=uint64_t(1);state_["Progress"]=j_obj();state_["Installations"]=j_arr();state_["DateFieldState"]=j_obj();state_["DateFieldInfo"]=schema_default("DateFieldInfo");state_["DateFieldNodeInfos"]=j_arr();state_["FavorInfos"]=j_arr();state_["DateFieldNodeEventInfos"]=j_arr();state_["CollectionArtifactInfo"]=schema_default("CollectionArtifactInfo");state_["LobbyCharacterInfo"]=schema_default("LobbyCharacterInfo");state_["LobbyBackgroundId"]=uint64_t(30001);state_["LobbyCharacterInfo"]["TableIds_Day"]=j_arr();state_["LobbyCharacterInfo"]["TableIds_Day"].push_back(uint64_t(10001));state_["LobbyCharacterInfo"]["TableIds_Night"]=j_arr();state_["LobbyCharacterInfo"]["TableIds_Night"].push_back(uint64_t(10001));state_["LobbyCharacterId"]=uint64_t(10001);state_["WishlistInfo"]=schema_default("WishlistInfo");state_["RecruitInfos"]=j_arr();state_["ScenarioPackMiniInfos"]=j_arr();state_["ScenarioPackDetailInfos"]=j_arr();state_["ShopItemInfos"]=j_arr();state_["ServerOptionInfo"]=schema_default("ServerOptionInfo");state_["DailyState"]=j_obj();state_["GuideState"]=j_obj();state_["PackState"]=j_obj();state_["formations"]=j_arr();J starter=make_default_character(10001,100000);state_["characters"].push_back(std::move(starter));J formation=j_obj();formation["Index"]=int64_t(0);formation["CharacterTableIds"]=j_arr();formation["CharacterTableIds"].push_back(uint64_t(10001));formation["VignetteTableIds"]=j_arr();formation["Name"]="Formation 1";state_["formations"].push_back(std::move(formation));state_["NextServerId"]=uint64_t(100001);state_["StoreRevision"]=uint64_t(0);}
+void Backend::seed_defaults(){state_=j_obj();state_["SchemaVersion"]=3;state_["Account"]=default_account();state_["inventory"]=j_arr();state_["characters"]=j_arr();state_["vignettes"]=j_arr();state_["artifacts"]=j_arr();state_["runes"]=j_arr();state_["rune_stock"]=j_arr();state_["tickets"]=j_arr();state_["costumes"]=j_arr();state_["mails"]=j_arr();state_["ReceiptInfos"]=j_arr();state_["quests"]=j_obj();state_["formations"]=j_arr();state_["gacha_state"]=j_obj();state_["GachaAdjustPointInfos"]=j_arr();state_["RuneGrantInfos"]=j_arr();state_["ClaimedMailIds"]=j_arr();state_["ClaimedGuideMissionTaskIds"]=j_arr();state_["ClaimedFavorRewardIds"]=j_arr();state_["TutorialInfo"]=j_obj();state_["TutorialInfo"]["InitialIndex"]=int64_t(0);state_["TutorialInfo"]["ContentBits"]=uint64_t(0);state_["Progress"]=j_obj();state_["Installations"]=j_arr();state_["DateFieldState"]=j_obj();state_["DateFieldInfo"]=schema_default("DateFieldInfo");state_["DateFieldNodeInfos"]=j_arr();state_["FavorInfos"]=j_arr();state_["DateFieldNodeEventInfos"]=j_arr();state_["CollectionArtifactInfo"]=schema_default("CollectionArtifactInfo");state_["LobbyCharacterInfo"]=schema_default("LobbyCharacterInfo");state_["LobbyBackgroundId"]=uint64_t(30001);state_["LobbyCharacterInfo"]["TableIds_Day"]=j_arr();state_["LobbyCharacterInfo"]["TableIds_Day"].push_back(uint64_t(10001));state_["LobbyCharacterInfo"]["TableIds_Night"]=j_arr();state_["LobbyCharacterInfo"]["TableIds_Night"].push_back(uint64_t(10001));state_["LobbyCharacterId"]=uint64_t(10001);state_["WishlistInfo"]=schema_default("WishlistInfo");state_["RecruitInfos"]=j_arr();state_["ScenarioPackMiniInfos"]=j_arr();state_["ScenarioPackDetailInfos"]=j_arr();state_["ShopItemInfos"]=j_arr();state_["ServerOptionInfo"]=schema_default("ServerOptionInfo");state_["DailyState"]=j_obj();state_["GuideState"]=j_obj();state_["PackState"]=j_obj();state_["formations"]=j_arr();J starter=make_default_character(10001,100000);state_["characters"].push_back(std::move(starter));J formation=j_obj();formation["Index"]=int64_t(0);formation["CharacterTableIds"]=j_arr();formation["CharacterTableIds"].push_back(uint64_t(10001));formation["VignetteTableIds"]=j_arr();formation["Name"]="Formation 1";state_["formations"].push_back(std::move(formation));state_["NextServerId"]=uint64_t(100001);state_["StoreRevision"]=uint64_t(0);}
 bool Backend::normalize_state(){
     if(!state_.is_object())return false;
     if(!state_["Account"].is_object())state_["Account"]=default_account();

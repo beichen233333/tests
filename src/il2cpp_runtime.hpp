@@ -25,7 +25,12 @@ struct Api {
     void *(*class_from_type)(const void *)=nullptr;
     void *(*class_from_system_type)(void *)=nullptr;
     void *(*type_get_object)(const void *)=nullptr;
-    const char *(*type_get_name)(const void *)=nullptr;
+    char *(*type_get_name)(const void *)=nullptr;
+    void *(*class_get_fields)(void *,void **)=nullptr;
+    const char *(*field_get_name)(void *)=nullptr;
+    void *(*class_get_methods)(void *,void **)=nullptr;
+    const void *(*method_get_param)(void *,uint32_t)=nullptr;
+    const void *(*method_get_return_type)(void *)=nullptr;
     void *(*class_get_field_from_name)(void *, const char *)=nullptr;
     size_t (*field_get_offset)(void *)=nullptr;
     const void *(*field_get_type)(void *)=nullptr;
@@ -88,6 +93,7 @@ public:
     void *find_class(const std::string &full_name, std::string *error=nullptr) const;
     void *find_field(void *klass, const std::string &name) const;
     void *find_method(void *klass, const std::string &name, int argc) const;
+    std::string describe_class(const std::string &full_name,size_t max_fields=128,size_t max_methods=256) const;
     void *generic_argument_class(void *closed_generic_class,size_t index,std::string *error=nullptr) const;
     bool invoke(void *method,void *instance,void **arguments,void **result,std::string *error=nullptr) const;
     uint32_t retain(void *object, bool pinned=false) const;

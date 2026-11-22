@@ -1,4 +1,5 @@
 #include "astrae_backend.h"
+#include "debug_log.hpp"
 #include "backend.hpp"
 #include "json.hpp"
 #include "il2cpp_runtime.hpp"
@@ -32,7 +33,7 @@ static void *find_nested_declaring_type(const astrae::il2cpp::Api &api,astrae::i
 extern "C" {
 int Java_com_nc_astraeoffline_OfflineBridge_getActions(void *,void *){return 0;}
 void Java_com_nc_astraeoffline_OfflineBridge_requestAction(void *,void *,int){}
-int AstraeOffline_Init(const char *save_directory,const char *table_directory){try{return astrae::Backend::instance().init(safe(save_directory),safe(table_directory));}catch(...){return 0;}}
+int AstraeOffline_Init(const char *save_directory,const char *table_directory){try{ASTRAE_LOGI("AstraeOffline_Init started: save_dir=%s table_dir=%s",save_directory&&*save_directory?save_directory:"<default>",table_directory&&*table_directory?table_directory:"<embedded/default>");int ok=astrae::Backend::instance().init(safe(save_directory),safe(table_directory));if(ok)ASTRAE_LOGI("AstraeOffline_Init succeeded");else ASTRAE_LOGE("AstraeOffline_Init failed; check storage path, embedded schema/protocol assets and save migration");return ok;}catch(const std::exception &e){ASTRAE_LOGE("AstraeOffline_Init exception: %s",e.what());return 0;}catch(...){ASTRAE_LOGE("AstraeOffline_Init unknown exception");return 0;}}
 void AstraeOffline_Shutdown(void){astrae::Backend::instance().shutdown();}
 char *AstraeOffline_Handle(const char *protocol,const char *request_json){if(!protocol)return copy_out("{}");try{return copy_out(astrae::Backend::instance().handle(protocol,request_json?request_json:"{}"));}catch(...){return copy_out("{\"Error\":\"InternalError\"}");}}
 char *AstraeOffline_HandleEnvelope(const char *envelope_json){try{auto v=astrae::json::parse(safe(envelope_json));if(!v.is_object())return copy_out("{\"Error\":\"InvalidEnvelope\"}");std::string protocol=v["protocol"].as_string(v["Protocol"].as_string());if(protocol.empty())return copy_out("{\"Error\":\"MissingProtocol\"}");auto req=v.contains("request")?v["request"]:v["Request"];if(!req.is_object())return copy_out("{\"Error\":\"RequestMustBeObject\"}");return copy_out(astrae::Backend::instance().handle(protocol,astrae::json::dump(req)));}catch(...){return copy_out("{\"Error\":\"InvalidEnvelope\"}");}}
@@ -62,7 +63,7 @@ int AstraeOffline_DispatchManagedMessage(void *network_object,const char *messag
     }catch(const std::exception &e){set_il2cpp_error(e.what());return 0;}catch(...){set_il2cpp_error("unknown managed message dispatch failure");return 0;}
 }
 int AstraeOffline_RespondManaged(void *network_object,const char *protocol_name,const char *response_json){
-    using astrae::il2cpp::Runtime;
+    using astrae::il2cpp::Runtime;ASTRAE_LOGD("RespondManaged begin: protocol=%s network=%p",protocol_name?protocol_name:"<null>",network_object);
     try{
         if(!network_object||!protocol_name||!*protocol_name||!response_json){set_il2cpp_error("invalid managed response arguments");return 0;}
         Runtime &rt=Runtime::instance();Runtime::ThreadScope scope(rt);if(!scope.ok()){set_il2cpp_error(scope.error());return 0;}
@@ -78,7 +79,7 @@ int AstraeOffline_RespondManaged(void *network_object,const char *protocol_name,
     }catch(const std::exception &e){set_il2cpp_error(e.what());return 0;}catch(...){set_il2cpp_error("unknown managed response failure");return 0;}
 }
 int AstraeOffline_HandleManagedRequestForProtocol(void *network_object,const char *protocol_name,const void *request_object){
-    using astrae::il2cpp::Runtime;
+    using astrae::il2cpp::Runtime;ASTRAE_LOGI("managed request begin: protocol=%s network=%p request=%p",protocol_name?protocol_name:"<null>",network_object,request_object);
     try{
         if(!network_object||!request_object||!protocol_name||!*protocol_name){set_il2cpp_error("managed request requires network, protocol name and request object");return 0;}
         std::string protocol=protocol_name;const std::string request_suffix=".Request",response_suffix=".Response";
@@ -86,10 +87,10 @@ int AstraeOffline_HandleManagedRequestForProtocol(void *network_object,const cha
         else if(protocol.size()<request_suffix.size()||protocol.compare(protocol.size()-request_suffix.size(),request_suffix.size(),request_suffix)!=0)protocol+=request_suffix;
         const std::string base=protocol.substr(0,protocol.size()-request_suffix.size());
         Runtime &rt=Runtime::instance();Runtime::ThreadScope scope(rt);if(!scope.ok()){set_il2cpp_error(scope.error());return 0;}
-        std::string error;std::string request=astrae::managed::ManagedWire::instance().read_object_json(protocol,request_object,&error);if(!error.empty()){set_il2cpp_error("cannot read managed request "+protocol+": "+error);return 0;}
-        std::string response=astrae::Backend::instance().handle(protocol,request);if(response.empty()){set_il2cpp_error("backend returned an empty response for "+protocol);return 0;}
-        if(!AstraeOffline_RespondManaged(network_object,base.c_str(),response.c_str()))return 0;set_il2cpp_error("");return 1;
-    }catch(const std::exception &e){set_il2cpp_error(e.what());return 0;}catch(...){set_il2cpp_error("unknown managed request handling failure");return 0;}
+        std::string error;std::string request=astrae::managed::ManagedWire::instance().read_object_json(protocol,request_object,&error);if(!error.empty()){set_il2cpp_error("cannot read managed request "+protocol+": "+error);ASTRAE_LOGE("managed request read failed for %s: %s",protocol.c_str(),error.c_str());return 0;}
+        std::string response=astrae::Backend::instance().handle(protocol,request);if(response.empty()){set_il2cpp_error("backend returned an empty response for "+protocol);ASTRAE_LOGE("backend returned an empty response for %s",protocol.c_str());return 0;}
+        if(!AstraeOffline_RespondManaged(network_object,base.c_str(),response.c_str())){const std::string dispatch_error=get_il2cpp_error();ASTRAE_LOGE("managed response dispatch failed for %s: %s",base.c_str(),dispatch_error.c_str());return 0;}set_il2cpp_error("");ASTRAE_LOGI("managed request completed: %s",protocol.c_str());return 1;
+    }catch(const std::exception &e){set_il2cpp_error(e.what());ASTRAE_LOGE("managed request exception: %s",e.what());return 0;}catch(...){set_il2cpp_error("unknown managed request handling failure");ASTRAE_LOGE("managed request unknown exception");return 0;}
 }
 int AstraeOffline_HandleManagedRequest(void *network_object,const void *request_object){
     using astrae::il2cpp::Runtime;

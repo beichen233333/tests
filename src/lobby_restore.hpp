@@ -6,9 +6,12 @@
 struct cJSON;
 
 namespace astrae::lobby {
+// Reconstructed from artifact_capacity_tables@0x24c2ec: sets Common+0xc8
+// SecureInt value to 9999, then verifies Common.get_Inventory_Artifact_Max_Slots().
+bool artifact_capacity_tables(void *data_manager,std::string *error=nullptr);
 // Reconstructed from permanent_raid_tables@0x24e494 in the original ELF.
 // Applies the original 128-bit row field constant to every row in the
-// DataManager's permanent-raid table (original accepted count: 0..128).
+// DataManager's permanent-raid table (original accepted count: 1..128).
 bool apply_permanent_raid_tables(void *data_manager,std::string *error=nullptr);
 // Reconstructed from local_activity_period@0x24b070. Returns the managed
 // DateTimeExtensions.GetRecentResetDay(DateTime.UtcNow) ticks, or -1 on failure.
@@ -16,7 +19,9 @@ int64_t local_activity_period(std::string *error=nullptr);
 // Registers the reconstructed DateTime reset provider with the local Store ABI, matching touch@0x23972c.
 void register_local_activity_period_provider();
 // Reconstructed IL2CPP access primitives shared by the original lobby/table helpers.
-// Returns a pinned GC handle to the row; the caller must release it with Runtime::release().
+// The borrowed getter returns a row still owned by the live DataManager dictionary.
+void *table_get_key_borrowed(void *data_manager,uint32_t table_offset,const void *key,std::string *error=nullptr);
+void *table_get_borrowed(void *data_manager,uint32_t table_offset,uint64_t key,std::string *error=nullptr);
 uint32_t table_get_key_pinned(void *data_manager,uint32_t table_offset,const void *key,std::string *error=nullptr);
 uint32_t table_get_pinned(void *data_manager,uint32_t table_offset,uint64_t key,std::string *error=nullptr);
 uint32_t table_get_i32_pinned(void *data_manager,uint32_t table_offset,int32_t key,std::string *error=nullptr);
@@ -40,6 +45,9 @@ enum class InitialLobbyAction : uint8_t { None=0, EnterLobby=1, PlayFirstDay=2 }
 bool run_initial_lobby_route(void *login_controller,void *data_manager,uint64_t content_bits,InitialLobbyAction *action,std::string *error=nullptr);
 // Same route using the reconstructed local Store API's content_bits value.
 bool run_initial_lobby_route_from_store(void *login_controller,void *data_manager,InitialLobbyAction *action,std::string *error=nullptr);
-// Minimal Phase-1 replacement for touch: deliberately skips the first-day gate and enters the lobby.
+// Fail-closed partial reconstruction of reference touch(controller, method): recovers and
+// validates DataManager/Account at controller offsets 0x10/0xb0, but suppresses lobby dispatch
+// until the complete ordered table/account/cache restoration sequence has been implemented.
+// This function borrows roots from the active Unity managed invocation and creates no GCHandles.
 bool touch_enter_lobby(void *login_controller,std::string *error=nullptr);
 }
