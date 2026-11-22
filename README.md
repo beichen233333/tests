@@ -16,7 +16,7 @@ ShadowHook 官方手册也明确要求先初始化再调用 Hook API，并提示
 
 ## 当前运行状态（重要）
 
-当前版本**尚未实现完整大厅启动链，不是可正常游玩的完整单机版**。Hook #3 在 Unity 主线程验证 `controller+0x10` 的 DataManager 与 `controller+0xb0` 的 Account 后，已执行参考顺序中的第 1 步 `artifact_capacity_tables`（Common+0xc8 的 SecureInt 容量设为 9999 并通过 Getter 回读验证）。回调会借用正在执行的 Managed 调用栈对象引用，不在同步预检中创建或释放临时 GCHandle。第 2 步 `character99_tables` 和后续强制前置链尚未全部移植，因此回调仍明确 fail-closed，不调用 `EnterLobby()` / `PlayFirstDay()`。这是一种防止将不完整状态送入大厅的保护状态；登录/加载界面继续停留属于当前预期结果，不能把它当成单机运行完成。
+当前版本**尚未实现完整大厅启动链，不是可正常游玩的完整单机版**。最新设备日志已证明，Hook #3 以 direct-replacement 模式消费登录输入：每次 `touch` 都进入自研回调，但由于 `character99_tables` 及后续 helper 未完成而 fail-closed 返回；该模式不会调用原游戏 trampoline，因此登录动画保持不变是当前诊断构建的预期行为，不是点击控件或 ShadowHook 故障。新版本额外枚举 DataManager 的实际 CustomDataLoader/DBLoader 和 Character_LevelFactor/GrowthRecipe 运行时对象图，为完成步骤 2 提供字段/泛型依据。Hook #3 在 Unity 主线程验证 `controller+0x10` 的 DataManager 与 `controller+0xb0` 的 Account 后，已执行参考顺序中的第 1 步 `artifact_capacity_tables`（Common+0xc8 的 SecureInt 容量设为 9999 并通过 Getter 回读验证）。回调会借用正在执行的 Managed 调用栈对象引用，不在同步预检中创建或释放临时 GCHandle。第 2 步 `character99_tables` 和后续强制前置链尚未全部移植，因此回调仍明确 fail-closed，不调用 `EnterLobby()` / `PlayFirstDay()`。这是一种防止将不完整状态送入大厅的保护状态；登录/加载界面继续停留属于当前预期结果，不能把它当成单机运行完成。
 
 参考 ELF 中 `touch()` 的恢复顺序与依赖已记录在 `docs/REFERENCE_TOUCH_SEQUENCE.md`。其中 `bootstrap(account)` 不是一个简单赋值操作，而是串联账户、余额、基金会、邮件、卡池、农场、Raid、日期、设施、Guide、每日任务、剧情包任务和谜题的多级恢复。只有这些步骤逐项移植并且每步的返回状态、Managed 对象和持久化结果均验证成功，才允许恢复大厅分支。Hook #5 本地请求替换默认关闭且仍属部分业务实现；在协议请求/响应闭环经过实际游戏路径验证前，不应启用它。
 

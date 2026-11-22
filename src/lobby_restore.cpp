@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <unordered_set>
+#include <vector>
 
 namespace astrae::lobby {
 namespace {
@@ -291,7 +292,37 @@ std::atomic<bool> g_touch_lobby_entered{false};
 std::mutex g_character99_metadata_mutex;
 std::unordered_set<std::string> g_character99_metadata_emitted;
 std::atomic<bool> g_character99_metadata_complete{false};
+std::mutex g_character99_loader_metadata_mutex;
+std::unordered_set<std::string> g_character99_loader_metadata_emitted;
+std::atomic<bool> g_character99_loader_metadata_complete{false};
+std::atomic<bool> g_artifact_capacity_applied{false};
 std::atomic_flag g_touch_lobby_running=ATOMIC_FLAG_INIT;
+
+std::string managed_class_full_name(const il2cpp::Api &api,void *object){
+    if(!object||!api.object_get_class)return {};
+    void *klass=api.object_get_class(object);if(!klass)return {};
+    const char *name=api.class_get_name?api.class_get_name(klass):nullptr;
+    const char *ns=api.class_get_namespace?api.class_get_namespace(klass):nullptr;
+    if(!name||!*name)return {};
+    return (ns&&*ns?std::string(ns)+".":std::string())+name;
+}
+void emit_managed_object_metadata(il2cpp::Runtime &runtime,const il2cpp::Api &api,const char *tag,void *object,std::unordered_set<std::string> &emitted,std::mutex &mutex){
+    if(!object){ASTRAE_LOGW("character99 runtime object probe: %s=null",tag);return;}
+    const std::string type=managed_class_full_name(api,object);
+    if(type.empty()){ASTRAE_LOGW("character99 runtime object probe: %s=%p has no Managed class",tag,object);return;}
+    ASTRAE_LOGI("character99 runtime object probe: %s=%p class=%s",tag,object,type.c_str());
+    if(type.size()>=2&&type.compare(type.size()-2,2,"[]")==0){
+        const uint64_t length=load_u64(object,0x18);
+        ASTRAE_LOGI("character99 runtime array probe: %s type=%s length=%llu",tag,type.c_str(),static_cast<unsigned long long>(length));
+        return;
+    }
+    {std::lock_guard<std::mutex> lock(mutex);if(!emitted.insert(type).second)return;}
+    const std::string description=runtime.describe_class(type,256,256);
+    ASTRAE_LOGI("character99 loader metadata snapshot begin: tag=%s type=%s",tag,type.c_str());
+    std::istringstream lines(description);std::string line;size_t index=0;
+    while(std::getline(lines,line))ASTRAE_LOGI("character99 loader metadata type=%s line=%zu: %s",type.c_str(),index++,line.c_str());
+    ASTRAE_LOGI("character99 loader metadata snapshot end: tag=%s type=%s",tag,type.c_str());
+}
 }
 bool touch_enter_lobby(void *login_controller,std::string *error){
     ASTRAE_LOGI("touch_enter_lobby called: controller=%p",login_controller);
@@ -312,6 +343,32 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
     if(!dm_class||!account_class){if(error)*error="controller DataManager or Account is not a valid managed object";ASTRAE_LOGE("touch preflight rejected invalid Managed objects: DataManager.class=%p Account.class=%p",dm_class,account_class);return false;}
     const char *dm_name=api.class_get_name?api.class_get_name(dm_class):nullptr;const char *account_name=api.class_get_name?api.class_get_name(account_class):nullptr;
     ASTRAE_LOGI("touch managed state validated: DataManager.class=%s Account.class=%s",dm_name?dm_name:"<unknown>",account_name?account_name:"<unknown>");
+    // The reference character99_tables helper traverses CustomDataLoader at these
+    // exact offsets. Inspect the live objects so the next reconstruction step uses the
+    // game's actual table-root classes and generic collection declarations, rather than
+    // guessing from the static factor/recipe record layouts alone.
+    if(!g_character99_loader_metadata_complete.load(std::memory_order_acquire)){
+        void *data_loader=load_pointer(data_manager,0x10);
+        void *db_loader=load_pointer(data_manager,0x18);
+        void *level_slot=load_pointer(data_loader,0xb8);
+        void *level_root=load_pointer(level_slot,0x18);
+        void *level_data=load_pointer(level_root,0x10);
+        void *growth_root=load_pointer(data_loader,0x1e0);
+        void *growth_data=load_pointer(growth_root,0x10);
+        void *growth_dictionary=load_pointer(growth_root,0x18);
+        ASTRAE_LOGI("character99 loader graph from reference offsets: data_loader=%p db_loader=%p level_slot=data_loader+0xb8:%p level_root=slot+0x18:%p level_data=root+0x10:%p growth_root=data_loader+0x1e0:%p growth_data=root+0x10:%p growth_dictionary=root+0x18:%p",data_loader,db_loader,level_slot,level_root,level_data,growth_root,growth_data,growth_dictionary);
+        emit_managed_object_metadata(runtime,api,"DataManager._dataLoader",data_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"DataManager._dbLoader",db_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.slot",level_slot,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.root",level_root,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.data",level_data,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.root",growth_root,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.data",growth_data,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.dictionary",growth_dictionary,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        bool complete=level_root&&level_data&&growth_root&&growth_data&&growth_dictionary;
+        if(complete){g_character99_loader_metadata_complete.store(true,std::memory_order_release);ASTRAE_LOGI("character99 loader graph probe complete; actual LevelFactor and GrowthRecipe roots resolved");}
+        else ASTRAE_LOGW("character99 loader graph probe incomplete; waiting for CustomDataLoader table roots; metadata will retry on the next touch callback");
+    }
     if(!g_character99_metadata_complete.load(std::memory_order_acquire)){
         const char *dm_ns=api.class_get_namespace?api.class_get_namespace(dm_class):nullptr;
         const char *account_ns=api.class_get_namespace?api.class_get_namespace(account_class):nullptr;
@@ -341,15 +398,18 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
     // or asynchronous hand-off occurs in this preflight path.
     ASTRAE_LOGI("touch preflight using borrowed managed roots from active invocation; GCHandle retain/free intentionally skipped");
     std::string helper_error;
-    if(!artifact_capacity_tables(data_manager,&helper_error)){if(error)*error="reference touch step 1/15 artifact_capacity_tables failed: "+helper_error;ASTRAE_LOGE("reference touch step 1/15 artifact_capacity_tables failed: %s",helper_error.c_str());return false;}
-    ASTRAE_LOGI("reference touch step 1/15 completed: artifact_capacity_tables");
+    if(!g_artifact_capacity_applied.load(std::memory_order_acquire)){
+        if(!artifact_capacity_tables(data_manager,&helper_error)){if(error)*error="reference touch step 1/15 artifact_capacity_tables failed: "+helper_error;ASTRAE_LOGE("reference touch step 1/15 artifact_capacity_tables failed: %s",helper_error.c_str());return false;}
+        g_artifact_capacity_applied.store(true,std::memory_order_release);
+        ASTRAE_LOGI("reference touch step 1/15 completed: artifact_capacity_tables");
+    }
     // Do not infer success from a helper existing in this project: the original invokes
     // these operations in a strict order and checks each result before dispatch. The
     // account bootstrap also contains many nested restorers, listed individually below.
     constexpr const char *implemented_not_integrated="permanent_raid_tables, battle_multiple_tables, office_wire_probe, installation_native_tables";
     constexpr const char *missing="character99_tables, seed_ticket_defaults/seed_table_defaults, permanent_raid_tables(integration pending), battle_multiple_tables(integration pending), custom_resource_tables, custom_item_tables, signed_exchange_tables, earned_unlocks/sync_unlocks, bootstrap(account){restore_balances,restore_foundation,pack_objects_cache,local_mail_count,restore_gacha,restore_farming_cache,restore_raid_cache,date_restore,installation_restore,guide_restore_cache,restore_daily_cache,restore_pack_missions,restore_puzzles}, local_account_event_login, guide_restore_cache(account,true)/initialize_guide_cache";
-    if(error)*error=std::string("reference touch initialization is incomplete; EnterLobby suppressed; missing: ")+missing;
-    ASTRAE_LOGE("lobby dispatch blocked after object validation: missing required restorations: %s",missing);
+    if(error)*error=std::string("reference touch initialization is incomplete; this direct-replacement Hook #3 consumes the touch event and suppresses navigation; missing: ")+missing;
+    ASTRAE_LOGE("lobby dispatch blocked after object validation; Hook #3 consumes this touch event and does not call the original game method: missing required restorations: %s",missing);
     ASTRAE_LOGW("already reconstructed but not yet integrated into the verified touch sequence: %s",implemented_not_integrated);
     ASTRAE_LOGI("recovered live Managed roots are valid: DataManager=%p Account=%p; no EnterLobby/PlayFirstDay call was made",data_manager,account);
     return false;

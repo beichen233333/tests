@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 EXCLUDED_DIRS = {
     ".git", ".idea", ".vscode", "build", "build-host", "build-android",
     "build-android-arm64", "artifacts", "dist", "__pycache__", ".pytest_cache",
-    ".mypy_cache", ".cache", "tests", "useless", "third_party",
+    ".mypy_cache", ".cache", "useless", "third_party",
 }
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".o", ".a", ".so", ".dylib", ".dll", ".class"}
 EXCLUDED_NAMES = {"Thumbs.db", ".DS_Store"}
