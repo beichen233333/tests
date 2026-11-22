@@ -701,8 +701,17 @@ int store_commit(void) {
     cJSON *verified = read_document(g_temp_path, &temp_exists);
     if (!verified) { std::remove(g_temp_path); set_error("serialize"); return 0; }
     cJSON_Delete(verified);
-    if (std::rename(g_save_path, g_backup_path) != 0) { std::remove(g_temp_path); set_error("backup previous"); return 0; }
-    if (std::rename(g_temp_path, g_save_path) != 0) { std::remove(g_temp_path); set_error("replace primary"); return 0; }
+    const bool had_primary = access(g_save_path, F_OK) == 0;
+    if (had_primary) {
+        std::remove(g_backup_path);
+        if (std::rename(g_save_path, g_backup_path) != 0) { std::remove(g_temp_path); set_error("backup previous"); return 0; }
+    } else if (errno != ENOENT) {
+        std::remove(g_temp_path); set_error("inspect previous save"); return 0;
+    }
+    if (std::rename(g_temp_path, g_save_path) != 0) {
+        if (had_primary) (void)std::rename(g_backup_path, g_save_path);
+        std::remove(g_temp_path); set_error("replace primary"); return 0;
+    }
     return 1;
 }
 int store_open(const char *directory) {

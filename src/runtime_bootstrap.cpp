@@ -2,6 +2,8 @@
 #include "il2cpp_runtime.hpp"
 #include "managed_wire.hpp"
 #include "hook_runtime.hpp"
+#include "lobby_restore.hpp"
+#include "original_store_abi.h"
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -11,6 +13,7 @@
 #include <pthread.h>
 namespace {
 constexpr const char *kLogTag="AstraeOffline";
+constexpr const char *kCompatStoreDirectory="/sdcard/Android/data/com.nc.astraeoratio.singleplayer/files/AstraeOffline/SinglePlayer/compat-store";
 std::atomic<bool> g_started{false};
 void log_line(int priority,const char *message){__android_log_write(priority,kLogTag,message?message:"(null)");}
 void *runtime_worker(void *){
@@ -20,9 +23,17 @@ void *runtime_worker(void *){
     // Do not touch game code unless both the managed schema and offline backend are ready.
     std::this_thread::sleep_for(std::chrono::milliseconds(750));
     if(!astrae::managed::ManagedWire::instance().load_schema("assets/schema/wire_shapes.json",&error)){log_line(ANDROID_LOG_ERROR,("wire schema initialization failed: "+error+"; no hooks installed").c_str());return nullptr;}
-    if(!AstraeOffline_Init(nullptr,nullptr)){log_line(ANDROID_LOG_ERROR,"offline backend initialization failed; no hooks installed and original game path remains untouched");return nullptr;}
-    if(!astrae::hooks::install_local_request_hook(&error)){log_line(ANDROID_LOG_ERROR,("local_request hook installation failed: "+error+"; UI hooks will not be installed").c_str());return nullptr;}
-    log_line(ANDROID_LOG_INFO,"local_request hook installed with original-function trampoline fallback");
+    if(!AstraeOffline_Init(nullptr,nullptr)){log_line(ANDROID_LOG_ERROR,"offline backend initialization failed; no hooks installed");return nullptr;}
+    // Keep the legacy Store ABI alive for compatibility exports. Its file is separate from
+    // Backend/save.json because the two stores intentionally have different schemas.
+    if(!store_open(kCompatStoreDirectory))log_line(ANDROID_LOG_WARN,(std::string("compat Store open failed; lobby route will still use the embedded bypass bit: ")+store_error()).c_str());
+    else{int changed=0;if(!store_skip_first_day(&changed))log_line(ANDROID_LOG_WARN,(std::string("compat first-day skip could not be persisted: ")+store_error()).c_str());}
+    astrae::lobby::register_local_activity_period_provider();
+    if(!astrae::hooks::install_local_request_hook(&error))log_line(ANDROID_LOG_WARN,("Hook #5 local_request unavailable: "+error+"; lobby entry remains enabled").c_str());
+    else log_line(ANDROID_LOG_INFO,"Hook #5 local_request installed with ErrorPacket fallback for unmapped requests");
+    std::string touch_error;
+    if(!astrae::hooks::install_touch_hook(&touch_error)){log_line(ANDROID_LOG_ERROR,("Hook #3 touch installation failed: "+touch_error).c_str());return nullptr;}
+    log_line(ANDROID_LOG_INFO,"Hook #3 touch installed: minimal path skips first-day tutorial and dispatches UILoginPageController.EnterLobby");
     // UI code is patched only after a request was actually accepted by the offline backend.
     // This keeps the early splash/login initialization path free of UI code-page changes.
     constexpr int kWaitTicks=1200;
