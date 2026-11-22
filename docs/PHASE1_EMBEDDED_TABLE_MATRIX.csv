@@ -1,0 +1,10 @@
+﻿file,table_names,rows,bytes
+embedded_01_raid_datefield_character.json,23,4084,1908098
+embedded_02_guide_quests_missions.json,7,237,210955
+embedded_03_scenario_pack_puzzle.json,6,252,213150
+embedded_04_installation_seed.json,2,1,136
+embedded_05_node_event_seed.json,2,1,106
+embedded_06_result_grade.json,1,1,71
+embedded_07_buff_installation_seed.json,3,1,153
+embedded_08_open_slots.json,2,1,89
+embedded_09_empty.json,0,0,2

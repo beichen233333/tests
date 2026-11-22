@@ -1,0 +1,102 @@
+{
+  "original_elf": {
+    "sha256": "86f65f4f11cf5657143ec848fab6ad7c444ed880ed3e04039add8acead7121e1",
+    "size_bytes": 4083840,
+    "machine": "AArch64",
+    "type": "ET_DYN",
+    "soname": "libastraeoffline.so",
+    "needed": [
+      "libc.so",
+      "libdl.so",
+      "liblog.so"
+    ],
+    "dynamic_exports": 126,
+    "export_categories": {
+      "jni": 2,
+      "platform": 1,
+      "cJSON": 79,
+      "store": 44
+    },
+    "verified_dynamic_exports": 126,
+    "verified_needed": [
+      "libc.so",
+      "libdl.so",
+      "liblog.so"
+    ]
+  },
+  "recovery": {
+    "text_symbols": 390,
+    "dwarf_subprogram_signatures": 333,
+    "original_source_text_available": false
+  },
+  "protocols": {
+    "requests": 93,
+    "responses": 116,
+    "wire_shapes": 359,
+    "missing_request_shapes": [],
+    "missing_response_shapes": [],
+    "route_counts": {
+      "account": 9,
+      "artifact": 5,
+      "date": 4,
+      "farming": 2,
+      "gacha": 5,
+      "growth": 8,
+      "installation": 10,
+      "mail": 6,
+      "misc": 11,
+      "mission": 10,
+      "quest": 11,
+      "raid": 4,
+      "rune": 6,
+      "shop": 2
+    },
+    "semantic_parity": "not_verified"
+  },
+  "embedded_tables": {
+    "json_blobs": 9,
+    "table_names": 46,
+    "rows": 4578
+  },
+  "hooks": {
+    "total": 39,
+    "trampoline": 29,
+    "direct_replacement": 10,
+    "signature_present": 37,
+    "signature_missing": 2,
+    "current_ui_passthrough_bindings": 19,
+    "direct_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      8,
+      11,
+      27,
+      36,
+      37
+    ]
+  },
+  "store_api": {
+    "declared": 44,
+    "source_bodies_detected": 44,
+    "missing_source_bodies": [],
+    "semantic_parity": "not_verified"
+  },
+  "current_runtime": {
+    "autostart_default": "OFF",
+    "worker_guarded_by_android_and_autostart": true,
+    "installer_rejects_no_trampoline": true,
+    "local_request_hook_id": 5,
+    "automatic_backend_ready_by_default": false
+  },
+  "host_test_result": {
+    "ctest": "23/23 passed on the current host build; does not establish Android runtime parity"
+  },
+  "replica_so": {
+    "store_exports_found": 44,
+    "store_exports_expected": 44
+  },
+  "audit_errors": []
+}
