@@ -1,0 +1,10 @@
+{
+  "InstallationServerId": "9902",
+  "RegisterAgents": [
+    {
+      "TableId": "1",
+      "GroupId": 1,
+      "Agents": []
+    }
+  ]
+}

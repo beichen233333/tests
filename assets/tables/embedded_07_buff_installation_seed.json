@@ -1,0 +1,10 @@
+{
+  "InstallationServerId": "9901",
+  "BuffTableId": "9001",
+  "Apply": [
+    {
+      "ApplyCharacterTableId": "10001",
+      "UpdateType": 0
+    }
+  ]
+}

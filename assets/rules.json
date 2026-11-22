@@ -1,0 +1,28 @@
+{
+  "successResultValues": [
+    0
+  ],
+  "questCosts": {},
+  "questRewards": {},
+  "farmingRewards": {},
+  "missionRewards": {},
+  "favorRewards": {},
+  "fixedRewards": {},
+  "puzzleRewards": {},
+  "shopItems": {},
+  "gachaPools": [],
+  "operations": {},
+  "characterGrowthCosts": {
+    "level": {},
+    "star": {},
+    "potential": {},
+    "resetPotential": {},
+    "skill": {},
+    "vignette": {}
+  },
+  "artifactGrowthCosts": {
+    "level": {},
+    "star": {}
+  },
+  "artifactDecomposeRewards": {}
+}

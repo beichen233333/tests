@@ -1,0 +1,85 @@
+name: Android ARM64 build and release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-package:
+    name: Test, build and upload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      ANDROID_NDK_VERSION: 27.2.12479018
+      BUILD_TYPE: Release
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install pinned NDK and CMake
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "ndk;${ANDROID_NDK_VERSION}" "cmake;3.22.1"
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME}}"
+          echo "ANDROID_NDK_HOME=${SDK_ROOT}/ndk/${ANDROID_NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Configure host tests
+        run: cmake -S . -B build-host -DCMAKE_BUILD_TYPE=${BUILD_TYPE} -DASTRAE_BUILD_TESTS=ON
+
+      - name: Build host test targets
+        run: cmake --build build-host --parallel 2
+
+      - name: Run host regression tests
+        run: ctest --test-dir build-host --output-on-failure
+
+      - name: Build Android arm64-v8a shared library
+        run: ./scripts/build_android_arm64.sh
+
+      - name: Package source and Android binaries
+        shell: bash
+        run: |
+          mkdir -p dist
+          python3 scripts/package_source.py --output dist/AstraeOfflineBackend-source.zip
+          cd artifacts/android-arm64-v8a
+          zip -j "$GITHUB_WORKSPACE/dist/AstraeOfflineBackend-android-arm64-v8a.zip" \
+            libastraeoffline.so SHA256.txt ELF_REPORT.txt
+          if [[ -f PHASE4_VALIDATION.json ]]; then
+            zip -j "$GITHUB_WORKSPACE/dist/AstraeOfflineBackend-android-arm64-v8a.zip" PHASE4_VALIDATION.json
+          fi
+          cd "$GITHUB_WORKSPACE"
+          sha256sum dist/*.zip > dist/SHA256SUMS.txt
+
+      - name: Upload downloadable build attachments
+        uses: actions/upload-artifact@v4
+        with:
+          name: AstraeOfflineBackend-${{ github.ref_name }}
+          path: |
+            dist/AstraeOfflineBackend-source.zip
+            dist/AstraeOfflineBackend-android-arm64-v8a.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Attach ZIPs to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/AstraeOfflineBackend-source.zip
+            dist/AstraeOfflineBackend-android-arm64-v8a.zip
+            dist/SHA256SUMS.txt

@@ -1,0 +1,778 @@
+{
+  "schema_version": 1,
+  "evidence_basis": "Original AArch64 worker disassembly, DWARF function signatures, and read-only expected-byte arrays in the supplied ELF. Static manifest only; no runtime patching.",
+  "original_elf": {
+    "filename": "libastraeoffline.so",
+    "sha256": "86f65f4f11cf5657143ec848fab6ad7c444ed880ed3e04039add8acead7121e1",
+    "machine": "AArch64",
+    "elf_type": "ET_DYN"
+  },
+  "target_base_resolution": {
+    "handle": "dlopen(\"libil2cpp.so\", RTLD_NOW | RTLD_NOLOAD)",
+    "symbol": "il2cpp_thread_attach",
+    "base": "dladdr(symbol).dli_fbase",
+    "offset_semantics": "target_offset is relative to the dli_fbase of the module containing il2cpp_thread_attach"
+  },
+  "hook_installer": {
+    "rva": "0x238f14",
+    "expected_prefix_length": 16,
+    "patch_stub_bytes": "5000005800021fd6",
+    "patch_stub_semantics": "ldr x16, [pc, #8]; br x16; followed by the absolute replacement pointer in the next 8 bytes",
+    "cache_sync": "dc cvau; dsb ish; ic ivau; dsb ish; isb",
+    "target_page_permissions": "mprotect RWX during patch, then RX"
+  },
+  "trampoline_builder": {
+    "rva": "0x23d9bc",
+    "count": 29,
+    "note": "A trampoline is allocated/stored only for these entries; original storage slot is relative to original libastraeoffline image base."
+  },
+  "counts": {
+    "hooks": 39,
+    "with_trampoline": 29,
+    "without_trampoline": 10,
+    "replacement_signatures_available": 37,
+    "replacement_signatures_missing": 2
+  },
+  "hooks": [
+    {
+      "id": 1,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x54ccee4",
+      "target_expected_bytes_rva": "0x68675",
+      "target_expected_bytes": "fe67bca9f85f01a9f65702a9f44f03a9",
+      "hook_call_site_rva": "0x238438",
+      "replacement": {
+        "symbol": "content_view",
+        "rva": "0x239064",
+        "signature": "content_view(void * network, uint64_t id, void * method) -> void [line=155 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 155
+      },
+      "trampoline": null
+    },
+    {
+      "id": 2,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x54cc7a0",
+      "target_expected_bytes_rva": "0x68685",
+      "target_expected_bytes": "fe67bca9f85f01a9f65702a9f44f03a9",
+      "hook_call_site_rva": "0x238458",
+      "replacement": {
+        "symbol": "tutorial_progress",
+        "rva": "0x23926c",
+        "signature": "",
+        "source": "offline_bridge.c",
+        "source_line": 160
+      },
+      "trampoline": null
+    },
+    {
+      "id": 3,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5cdf7a4",
+      "target_expected_bytes_rva": "0x68695",
+      "target_expected_bytes": "400300b4080840f9080300b409814039",
+      "hook_call_site_rva": "0x238478",
+      "replacement": {
+        "symbol": "touch",
+        "rva": "0x2392f4",
+        "signature": "touch(void * controller, void * method) -> void [line=314 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 314
+      },
+      "trampoline": null
+    },
+    {
+      "id": 4,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x54ae514",
+      "target_expected_bytes_rva": "0x686a5",
+      "target_expected_bytes": "ffc301d1fe5f04a9f65705a9f44f06a9",
+      "hook_call_site_rva": "0x23849c",
+      "replacement": {
+        "symbol": "local_log",
+        "rva": "0x23a574",
+        "signature": "local_log(void * sdk, int event, int count, int flag, void * m) -> void [line=394 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 394
+      },
+      "trampoline": null
+    },
+    {
+      "id": 5,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x2a5be04",
+      "target_expected_bytes_rva": "0x686b5",
+      "target_expected_bytes": "ff0305d1fd7b0ea9fc6f0fa9fa6710a9",
+      "hook_call_site_rva": "0x2384b8",
+      "replacement": {
+        "symbol": "local_request",
+        "rva": "0x23a598",
+        "signature": "local_request(void * network, void * server, void * url, void * request, int refresh, void * method) -> void [line=273 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 273
+      },
+      "trampoline": null
+    },
+    {
+      "id": 6,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5cc47b8",
+      "target_expected_bytes_rva": "0x686c5",
+      "target_expected_bytes": "ff4303d1fe6f08a9fa6709a9f85f0aa9",
+      "hook_call_site_rva": "0x2384fc",
+      "replacement": {
+        "symbol": "background",
+        "rva": "0x23dc74",
+        "signature": "background(void * controller, uint64_t id, void * callback, int immediate, void * method) -> void [line=307 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 307
+      },
+      "trampoline": {
+        "call_site_rva": "0x2384d4",
+        "expected_bytes_rva": "0x686c5",
+        "storage_rva": "0x2b5e38"
+      }
+    },
+    {
+      "id": 7,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x2a5bcf8",
+      "target_expected_bytes_rva": "0x686d5",
+      "target_expected_bytes": "fe0f1df8f65701a9f44f02a9481c40f9",
+      "hook_call_site_rva": "0x23853c",
+      "replacement": {
+        "symbol": "read_packet",
+        "rva": "0x23decc",
+        "signature": "read_packet(void * network, void * packet, void * method) -> void * [line=87 file=11]",
+        "source": "managed_wire.inc",
+        "source_line": 87
+      },
+      "trampoline": {
+        "call_site_rva": "0x238514",
+        "expected_bytes_rva": "0x686d5",
+        "storage_rva": "0x2b5e40"
+      }
+    },
+    {
+      "id": 8,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5de82b4",
+      "target_expected_bytes_rva": "0x686e5",
+      "target_expected_bytes": "ffc301d1fd7b01a9fc6f02a9fa6703a9",
+      "hook_call_site_rva": "0x23855c",
+      "replacement": {
+        "symbol": "gained_exp",
+        "rva": "0x23df44",
+        "signature": "gained_exp(void * controller, int before_level, int before_exp, int target_level, int target_exp, void * method) -> int [line=345 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 345
+      },
+      "trampoline": null
+    },
+    {
+      "id": 9,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5c4e220",
+      "target_expected_bytes_rva": "0x686f5",
+      "target_expected_bytes": "fe5fbda9f65701a9f44f02a9566600b0",
+      "hook_call_site_rva": "0x23859c",
+      "replacement": {
+        "symbol": "text_locale",
+        "rva": "0x23dfc4",
+        "signature": "text_locale(void * applier, int locale, int go_to_lobby, void * method) -> void [line=377 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 377
+      },
+      "trampoline": {
+        "call_site_rva": "0x238574",
+        "expected_bytes_rva": "0x686f5",
+        "storage_rva": "0x2b5e48"
+      }
+    },
+    {
+      "id": 10,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x57e2694",
+      "target_expected_bytes_rva": "0x68705",
+      "target_expected_bytes": "ff4302d1fe6705a9f85f06a9f65707a9",
+      "hook_call_site_rva": "0x2385dc",
+      "replacement": {
+        "symbol": "locale_initialize",
+        "rva": "0x23e140",
+        "signature": "locale_initialize(void * manager, int locale, int audio, void * method) -> struct locale_task [line=371 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 371
+      },
+      "trampoline": {
+        "call_site_rva": "0x2385b8",
+        "expected_bytes_rva": "0x68705",
+        "storage_rva": "0x2b5e50"
+      }
+    },
+    {
+      "id": 11,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5c4c644",
+      "target_expected_bytes_rva": "0x68715",
+      "target_expected_bytes": "810000b4211040b9e2031f2af4060014",
+      "hook_call_site_rva": "0x238604",
+      "replacement": {
+        "symbol": "text_settings_apply",
+        "rva": "0x23e1f8",
+        "signature": "text_settings_apply(void * applier, void * settings, void * method) -> void [line=388 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 389
+      },
+      "trampoline": null
+    },
+    {
+      "id": 12,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5cc76c8",
+      "target_expected_bytes_rva": "0x68725",
+      "target_expected_bytes": "ff4303d1fe4b00f9f85f0aa9f6570ba9",
+      "hook_call_site_rva": "0x238644",
+      "replacement": {
+        "symbol": "banner_click",
+        "rva": "0x23e2bc",
+        "signature": "banner_click(void * controller, int index, void * method) -> void [line=396 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 396
+      },
+      "trampoline": {
+        "call_site_rva": "0x23861c",
+        "expected_bytes_rva": "0x68725",
+        "storage_rva": "0x2b5e58"
+      }
+    },
+    {
+      "id": 13,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5e690d4",
+      "target_expected_bytes_rva": "0x68735",
+      "target_expected_bytes": "ff0302d1fe1300f9fc6f03a9fa6704a9",
+      "hook_call_site_rva": "0x238684",
+      "replacement": {
+        "symbol": "battle_result_shown",
+        "rva": "0x23e6ec",
+        "signature": "battle_result_shown(void * controller, int by_back, void * method) -> void [line=474 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 474
+      },
+      "trampoline": {
+        "call_site_rva": "0x23865c",
+        "expected_bytes_rva": "0x68735",
+        "storage_rva": "0x2b5e60"
+      }
+    },
+    {
+      "id": 14,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x52b6584",
+      "target_expected_bytes_rva": "0x68745",
+      "target_expected_bytes": "ff8303d1fe5300f9f85f0ba9f6570ca9",
+      "hook_call_site_rva": "0x2386c4",
+      "replacement": {
+        "symbol": "battle_visual_execute",
+        "rva": "0x23e8c4",
+        "signature": "battle_visual_execute(void * player, void * method) -> void [line=430 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 430
+      },
+      "trampoline": {
+        "call_site_rva": "0x23869c",
+        "expected_bytes_rva": "0x68745",
+        "storage_rva": "0x2b5e68"
+      }
+    },
+    {
+      "id": 15,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5dbe13c",
+      "target_expected_bytes_rva": "0x68755",
+      "target_expected_bytes": "fe57bea9f44f01a9d45a00d0f30300aa",
+      "hook_call_site_rva": "0x238704",
+      "replacement": {
+        "symbol": "ui_input_tick",
+        "rva": "0x23ea2c",
+        "signature": "ui_input_tick(void * input, void * method) -> void [line=468 file=1]",
+        "source": "offline_bridge.c",
+        "source_line": 468
+      },
+      "trampoline": {
+        "call_site_rva": "0x2386dc",
+        "expected_bytes_rva": "0x68755",
+        "storage_rva": "0x2b5e70"
+      }
+    },
+    {
+      "id": 16,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5e86ba4",
+      "target_expected_bytes_rva": "0x68765",
+      "target_expected_bytes": "ff8302d1fe2b00f9fa6706a9f85f07a9",
+      "hook_call_site_rva": "0x238744",
+      "replacement": {
+        "symbol": "unlock_notifications",
+        "rva": "0x23eb50",
+        "signature": "unlock_notifications(void * account, int kind, int exclude, int consume, void * method) -> void * [line=41 file=49]",
+        "source": "local_batch_hooks.inc",
+        "source_line": 41
+      },
+      "trampoline": {
+        "call_site_rva": "0x23871c",
+        "expected_bytes_rva": "0x68765",
+        "storage_rva": "0x2b5e78"
+      }
+    },
+    {
+      "id": 17,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5dd6b28",
+      "target_expected_bytes_rva": "0x68775",
+      "target_expected_bytes": "ff0303d1fe4300f9f85f09a9f6570aa9",
+      "hook_call_site_rva": "0x238784",
+      "replacement": {
+        "symbol": "video_path",
+        "rva": "0x23efe4",
+        "signature": "video_path(void * service, uint64_t id, void * method) -> void * [line=62 file=49]",
+        "source": "local_batch_hooks.inc",
+        "source_line": 62
+      },
+      "trampoline": {
+        "call_site_rva": "0x23875c",
+        "expected_bytes_rva": "0x68775",
+        "storage_rva": "0x2b5e80"
+      }
+    },
+    {
+      "id": 18,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5ce5354",
+      "target_expected_bytes_rva": "0x68785",
+      "target_expected_bytes": "ffc304d1fd7300f9fe670fa9f85f10a9",
+      "hook_call_site_rva": "0x2387c4",
+      "replacement": {
+        "symbol": "table_load_step",
+        "rva": "0x23f73c",
+        "signature": "table_load_step(void * state, void * method) -> void [line=17 file=49]",
+        "source": "local_batch_hooks.inc",
+        "source_line": 17
+      },
+      "trampoline": {
+        "call_site_rva": "0x23879c",
+        "expected_bytes_rva": "0x68785",
+        "storage_rva": "0x2b5e88"
+      }
+    },
+    {
+      "id": 19,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5ceb530",
+      "target_expected_bytes_rva": "0x68795",
+      "target_expected_bytes": "ff8304d1e85b00fdfd7b0ca9fc6f0da9",
+      "hook_call_site_rva": "0x238804",
+      "replacement": {
+        "symbol": "post_load_step",
+        "rva": "0x23f908",
+        "signature": "post_load_step(void * state, void * method) -> void [line=32 file=49]",
+        "source": "local_batch_hooks.inc",
+        "source_line": 32
+      },
+      "trampoline": {
+        "call_site_rva": "0x2387dc",
+        "expected_bytes_rva": "0x68795",
+        "storage_rva": "0x2b5e90"
+      }
+    },
+    {
+      "id": 20,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x57e1d64",
+      "target_expected_bytes_rva": "0x687a5",
+      "target_expected_bytes": "fe0f1df8f65701a9f44f02a9b3890090",
+      "hook_call_site_rva": "0x238844",
+      "replacement": {
+        "symbol": "custom_item_text",
+        "rva": "0x23ffa0",
+        "signature": "",
+        "source": "local_custom_items.inc",
+        "source_line": 15
+      },
+      "trampoline": {
+        "call_site_rva": "0x23881c",
+        "expected_bytes_rva": "0x687a5",
+        "storage_rva": "0x2b5e98"
+      }
+    },
+    {
+      "id": 21,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5def2d4",
+      "target_expected_bytes_rva": "0x687b5",
+      "target_expected_bytes": "fe57bea9f44f01a9545900b0f30300aa",
+      "hook_call_site_rva": "0x238884",
+      "replacement": {
+        "symbol": "unlock_popup_hidden",
+        "rva": "0x240020",
+        "signature": "unlock_popup_hidden(void * controller, void * method) -> void [line=56 file=49]",
+        "source": "local_batch_hooks.inc",
+        "source_line": 56
+      },
+      "trampoline": {
+        "call_site_rva": "0x23885c",
+        "expected_bytes_rva": "0x687b5",
+        "storage_rva": "0x2b5ea0"
+      }
+    },
+    {
+      "id": 22,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5dd0f54",
+      "target_expected_bytes_rva": "0x687c5",
+      "target_expected_bytes": "ffc303d1fd7b09a9fc6f0aa9fa670ba9",
+      "hook_call_site_rva": "0x2388c4",
+      "replacement": {
+        "symbol": "unlock_popup_step",
+        "rva": "0x24016c",
+        "signature": "unlock_popup_step(void * state, void * method) -> void [line=50 file=49]",
+        "source": "local_batch_hooks.inc",
+        "source_line": 50
+      },
+      "trampoline": {
+        "call_site_rva": "0x23889c",
+        "expected_bytes_rva": "0x687c5",
+        "storage_rva": "0x2b5ea8"
+      }
+    },
+    {
+      "id": 23,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5d59d88",
+      "target_expected_bytes_rva": "0x687d5",
+      "target_expected_bytes": "fe0f1cf8f85f01a9f65702a9f44f03a9",
+      "hook_call_site_rva": "0x23890c",
+      "replacement": {
+        "symbol": "action_pack_shown",
+        "rva": "0x24053c",
+        "signature": "action_pack_shown(void * controller, int back, void * method) -> void [line=13 file=2]",
+        "source": "local_actions.inc",
+        "source_line": 13
+      },
+      "trampoline": {
+        "call_site_rva": "0x2388e4",
+        "expected_bytes_rva": "0x687d5",
+        "storage_rva": "0x2b5eb0"
+      }
+    },
+    {
+      "id": 24,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5d5a77c",
+      "target_expected_bytes_rva": "0x687e5",
+      "target_expected_bytes": "fe0f1df8f65701a9f44f02a9f45d00d0",
+      "hook_call_site_rva": "0x238944",
+      "replacement": {
+        "symbol": "action_pack_hidden",
+        "rva": "0x2405a8",
+        "signature": "action_pack_hidden(void * controller, void * method) -> void [line=14 file=2]",
+        "source": "local_actions.inc",
+        "source_line": 14
+      },
+      "trampoline": {
+        "call_site_rva": "0x238920",
+        "expected_bytes_rva": "0x687e5",
+        "storage_rva": "0x2b5eb8"
+      }
+    },
+    {
+      "id": 25,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5cba6d4",
+      "target_expected_bytes_rva": "0x687f5",
+      "target_expected_bytes": "fe67bca9f85f01a9f65702a9f44f03a9",
+      "hook_call_site_rva": "0x238988",
+      "replacement": {
+        "symbol": "action_daily_shown",
+        "rva": "0x240614",
+        "signature": "action_daily_shown(void * controller, void * method) -> void [line=15 file=2]",
+        "source": "local_actions.inc",
+        "source_line": 15
+      },
+      "trampoline": {
+        "call_site_rva": "0x238964",
+        "expected_bytes_rva": "0x687f5",
+        "storage_rva": "0x2b5ec0"
+      }
+    },
+    {
+      "id": 26,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5cba440",
+      "target_expected_bytes_rva": "0x68805",
+      "target_expected_bytes": "fe0f1cf8f85f01a9f65702a9f44f03a9",
+      "hook_call_site_rva": "0x2389c8",
+      "replacement": {
+        "symbol": "action_daily_hidden",
+        "rva": "0x240680",
+        "signature": "action_daily_hidden(void * controller, void * method) -> void [line=16 file=2]",
+        "source": "local_actions.inc",
+        "source_line": 16
+      },
+      "trampoline": {
+        "call_site_rva": "0x2389a0",
+        "expected_bytes_rva": "0x68805",
+        "storage_rva": "0x2b5ec8"
+      }
+    },
+    {
+      "id": 27,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5d49c78",
+      "target_expected_bytes_rva": "0x68815",
+      "target_expected_bytes": "ff4303d1fe6709a9f85f0aa9f6570ba9",
+      "hook_call_site_rva": "0x2389e8",
+      "replacement": {
+        "symbol": "puzzle_missing_resources",
+        "rva": "0x2406ec",
+        "signature": "puzzle_missing_resources(void * controller, void * method) -> void [line=47 file=34]",
+        "source": "local_content_repairs.inc",
+        "source_line": 47
+      },
+      "trampoline": null
+    },
+    {
+      "id": 28,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5e8d60c",
+      "target_expected_bytes_rva": "0x68825",
+      "target_expected_bytes": "ffc302d1fe4300f9f65709a9f44f0aa9",
+      "hook_call_site_rva": "0x238a28",
+      "replacement": {
+        "symbol": "account_is_max",
+        "rva": "0x24083c",
+        "signature": "account_is_max(void * method) -> unsigned char [line=5 file=31]",
+        "source": "local_account_levels.inc",
+        "source_line": 5
+      },
+      "trampoline": {
+        "call_site_rva": "0x238a00",
+        "expected_bytes_rva": "0x68825",
+        "storage_rva": "0x2b5ed0"
+      }
+    },
+    {
+      "id": 29,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5cea104",
+      "target_expected_bytes_rva": "0x68835",
+      "target_expected_bytes": "ffc301d1fe1300f9fa6703a9f85f04a9",
+      "hook_call_site_rva": "0x238a68",
+      "replacement": {
+        "symbol": "title_loop_step",
+        "rva": "0x2409f4",
+        "signature": "title_loop_step(void * state, void * method) -> void [line=6 file=54]",
+        "source": "local_title_flow.inc",
+        "source_line": 6
+      },
+      "trampoline": {
+        "call_site_rva": "0x238a40",
+        "expected_bytes_rva": "0x68835",
+        "storage_rva": "0x2b5ed8"
+      }
+    },
+    {
+      "id": 30,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5ce88c0",
+      "target_expected_bytes_rva": "0x68845",
+      "target_expected_bytes": "ff4303d1fe6f08a9fa6709a9f85f0aa9",
+      "hook_call_site_rva": "0x238aa8",
+      "replacement": {
+        "symbol": "first_day_step",
+        "rva": "0x240ad4",
+        "signature": "first_day_step(void * state, void * method) -> void [line=12 file=54]",
+        "source": "local_title_flow.inc",
+        "source_line": 12
+      },
+      "trampoline": {
+        "call_site_rva": "0x238a80",
+        "expected_bytes_rva": "0x68845",
+        "storage_rva": "0x2b5ee0"
+      }
+    },
+    {
+      "id": 31,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5375678",
+      "target_expected_bytes_rva": "0x68855",
+      "target_expected_bytes": "ff4303d1fe4300f9fa6709a9f85f0aa9",
+      "hook_call_site_rva": "0x238af0",
+      "replacement": {
+        "symbol": "first_day_load",
+        "rva": "0x240b54",
+        "signature": "first_day_load(void * entry, void * setting, void * on_loaded, void * method) -> void [line=56 file=50]",
+        "source": "local_first_day_skip.inc",
+        "source_line": 56
+      },
+      "trampoline": {
+        "call_site_rva": "0x238ac8",
+        "expected_bytes_rva": "0x68855",
+        "storage_rva": "0x2b5ee8"
+      }
+    },
+    {
+      "id": 32,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x53759dc",
+      "target_expected_bytes_rva": "0x68865",
+      "target_expected_bytes": "fe57bea9f44f01a9f4ac00f0f30300aa",
+      "hook_call_site_rva": "0x238b28",
+      "replacement": {
+        "symbol": "first_day_destroy",
+        "rva": "0x240c24",
+        "signature": "first_day_destroy(void * entry, void * method) -> void [line=63 file=50]",
+        "source": "local_first_day_skip.inc",
+        "source_line": 63
+      },
+      "trampoline": {
+        "call_site_rva": "0x238b04",
+        "expected_bytes_rva": "0x68865",
+        "storage_rva": "0x2b5ef0"
+      }
+    },
+    {
+      "id": 33,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x3932cd0",
+      "target_expected_bytes_rva": "0x68875",
+      "target_expected_bytes": "ffc300d1fe5701a9f44f02a9747e0190",
+      "hook_call_site_rva": "0x238b68",
+      "replacement": {
+        "symbol": "first_day_button_click",
+        "rva": "0x240ca0",
+        "signature": "first_day_button_click(void * button, void * method) -> void [line=90 file=50]",
+        "source": "local_first_day_skip.inc",
+        "source_line": 90
+      },
+      "trampoline": {
+        "call_site_rva": "0x238b40",
+        "expected_bytes_rva": "0x68875",
+        "storage_rva": "0x2b5ef8"
+      }
+    },
+    {
+      "id": 34,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x38f9c2c",
+      "target_expected_bytes_rva": "0x68885",
+      "target_expected_bytes": "fe57bea9f44f01a9348001b0f30300aa",
+      "hook_call_site_rva": "0x238ba8",
+      "replacement": {
+        "symbol": "first_day_root_update",
+        "rva": "0x240df0",
+        "signature": "first_day_root_update(void * uiroot, void * method) -> void [line=156 file=50]",
+        "source": "local_first_day_skip.inc",
+        "source_line": 156
+      },
+      "trampoline": {
+        "call_site_rva": "0x238b80",
+        "expected_bytes_rva": "0x68885",
+        "storage_rva": "0x2b5f00"
+      }
+    },
+    {
+      "id": 35,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5c90df0",
+      "target_expected_bytes_rva": "0x68895",
+      "target_expected_bytes": "ff0304d1fe6300f9f85f0da9f6570ea9",
+      "hook_call_site_rva": "0x238be8",
+      "replacement": {
+        "symbol": "native_facility_click",
+        "rva": "0x240fb4",
+        "signature": "native_facility_click(void * controller, void * go, void * method) -> void [line=15 file=51]",
+        "source": "local_native_menu.inc",
+        "source_line": 15
+      },
+      "trampoline": {
+        "call_site_rva": "0x238bc0",
+        "expected_bytes_rva": "0x68895",
+        "storage_rva": "0x2b5f08"
+      }
+    },
+    {
+      "id": 36,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5d16748",
+      "target_expected_bytes_rva": "0x688a5",
+      "target_expected_bytes": "ffc301d1fd7b01a9fc6f02a9fa6703a9",
+      "hook_call_site_rva": "0x238c08",
+      "replacement": {
+        "symbol": "raid_ui_max_available",
+        "rva": "0x2411d0",
+        "signature": "raid_ui_max_available(void * controller, int cleared, void * method) -> int [line=39 file=15]",
+        "source": "local_raid.inc",
+        "source_line": 40
+      },
+      "trampoline": null
+    },
+    {
+      "id": 37,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5b29748",
+      "target_expected_bytes_rva": "0x688b5",
+      "target_expected_bytes": "ff4301d1fe5f02a9f65703a9f44f04a9",
+      "hook_call_site_rva": "0x238c28",
+      "replacement": {
+        "symbol": "item_selection_click",
+        "rva": "0x2411f0",
+        "signature": "item_selection_click(void * view, void * go, int real_index, void * method) -> void [line=12 file=61]",
+        "source": "local_item_selection_ui.inc",
+        "source_line": 12
+      },
+      "trampoline": null
+    },
+    {
+      "id": 38,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5cad914",
+      "target_expected_bytes_rva": "0x688c5",
+      "target_expected_bytes": "ffc301d1fe1b00f9f85f04a9f65705a9",
+      "hook_call_site_rva": "0x238c6c",
+      "replacement": {
+        "symbol": "item_selection_initialize",
+        "rva": "0x241350",
+        "signature": "item_selection_initialize(void * controller, void * go, int wrap_index, int real_index, void * method) -> void [line=18 file=61]",
+        "source": "local_item_selection_ui.inc",
+        "source_line": 18
+      },
+      "trampoline": {
+        "call_site_rva": "0x238c44",
+        "expected_bytes_rva": "0x688c5",
+        "storage_rva": "0x2b5f10"
+      }
+    },
+    {
+      "id": 39,
+      "target_module": "module_containing_il2cpp_thread_attach",
+      "target_offset": "0x5f4de78",
+      "target_expected_bytes_rva": "0x688d5",
+      "target_expected_bytes": "ff8305d1fd7b10a9fc6f11a9fa6712a9",
+      "hook_call_site_rva": "0x238cac",
+      "replacement": {
+        "symbol": "signed_exchange_refresh",
+        "rva": "0x24145c",
+        "signature": "signed_exchange_refresh(void * controller, void * item, int index, void * method) -> void [line=22 file=37]",
+        "source": "local_signed_exchange.inc",
+        "source_line": 22
+      },
+      "trampoline": {
+        "call_site_rva": "0x238c84",
+        "expected_bytes_rva": "0x688d5",
+        "storage_rva": "0x2b5f18"
+      }
+    }
+  ]
+}
