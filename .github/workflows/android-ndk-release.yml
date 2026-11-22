@@ -25,8 +25,18 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          # setup-android v4 no longer requests the removed legacy "tools" package.
+          # The command-line tools (including sdkmanager) are installed by the action.
+          packages: platform-tools
 
       - name: Install pinned NDK and CMake
         shell: bash
