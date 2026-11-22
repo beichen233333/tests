@@ -8,5 +8,7 @@ finally: lib.AstraeOffline_Free(p)
 assert doc['installAttempted'] is False
 assert doc['totalHooks']==39 and doc['expectedTrampolines']==29 and doc['expectedDirectHooks']==10
 assert doc['platformSupported'] is False and doc['fingerprintCompatible'] is False
-assert doc['error']=='Android process inspection is unavailable on this host platform'
-print('host Hook validation API is fail-closed and read-only')
+assert doc['error']=='Android arm64 process inspection is unavailable on this host platform'
+assert doc['uiPassthroughInstalled']==0
+assert 'pass-through wrappers' in doc['note']
+print('host Hook validation API is fail-closed; runtime-only UI install remains disabled on host')
