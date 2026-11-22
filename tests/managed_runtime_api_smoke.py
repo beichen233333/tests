@@ -41,7 +41,7 @@ assert status["canEnumerateCollections"] is False
 assert status["canResolveGenericArguments"] is False
 assert status["wireSchema"]["typeCount"] == 359
 assert "Android game process" in status["lastError"]
-assert lib.AstraeOffline_Version().decode().endswith("1.0.0-stage4")
+assert lib.AstraeOffline_Version().decode().endswith("1.0.0-stage5")
 assert lib.AstraeOffline_Il2Cpp_BuildObject(b"AccountLogin.Response", b"{}") == 0
 read_error = json.loads(take(lib.AstraeOffline_Il2Cpp_ReadObject(b"AccountLogin.Response", ctypes.c_void_p(1))))
 assert read_error["error"] == "ManagedWireReadFailed"

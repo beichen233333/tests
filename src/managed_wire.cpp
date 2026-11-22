@@ -1,4 +1,5 @@
 #include "managed_wire.hpp"
+#include "embedded_assets.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -42,7 +43,7 @@ private:
 }
 bool SchemaCatalog::load(const std::string &path,std::string *error){
     if(error)error->clear();shapes_.clear();field_count_=0;
-    try{std::string text;{FILE *f=std::fopen(path.c_str(),"rb");if(!f){if(error)*error="cannot open wire schema: "+path;return false;}if(std::fseek(f,0,SEEK_END)!=0){std::fclose(f);if(error)*error="cannot seek wire schema";return false;}long n=std::ftell(f);if(n<0||n>32*1024*1024){std::fclose(f);if(error)*error="wire schema size is invalid";return false;}std::rewind(f);text.resize(static_cast<size_t>(n));size_t got=std::fread(text.data(),1,text.size(),f);std::fclose(f);if(got!=text.size()){if(error)*error="wire schema read is incomplete";return false;}}
+    try{std::string text;{FILE *f=std::fopen(path.c_str(),"rb");if(!f){if(!assets::read_embedded_asset(path,text)){if(error)*error="cannot open wire schema or find embedded asset: "+path;return false;}}else{if(std::fseek(f,0,SEEK_END)!=0){std::fclose(f);if(error)*error="cannot seek wire schema";return false;}long n=std::ftell(f);if(n<0||n>32*1024*1024){std::fclose(f);if(error)*error="wire schema size is invalid";return false;}std::rewind(f);text.resize(static_cast<size_t>(n));size_t got=std::fread(text.data(),1,text.size(),f);std::fclose(f);if(got!=text.size()){if(error)*error="wire schema read is incomplete";return false;}}}
         Value root=json::parse(text);if(!root.is_array()){if(error)*error="wire_shapes root must be an array";return false;}
         for(const auto &item:root.as_array()){if(!item.is_object())continue;TypeShape shape;shape.name=item["name"].as_string();shape.is_struct=item["is_struct"].as_bool();if(shape.name.empty()||shapes_.count(shape.name))continue;const auto &fields=item["fields"];if(fields.is_array()){for(const auto &f:fields.as_array()){FieldShape x;x.name=f["name"].as_string();x.type=f["type"].as_string();x.element=f["element"].as_string();x.offset=static_cast<int>(f["offset"].as_i64(-1));std::string k=f["kind"].as_string();x.kind=k.empty()?'?':k[0];if(x.name.empty()||x.type.empty()||x.offset<0||(kind_size(x.kind)==0&&x.kind!='o'&&x.kind!='a'&&x.kind!='v'))continue;shape.fields.push_back(std::move(x));++field_count_;}}
             shapes_.emplace(shape.name,std::move(shape));}

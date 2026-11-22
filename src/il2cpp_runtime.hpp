@@ -19,6 +19,7 @@ struct Api {
     const char *(*class_get_name)(void *)=nullptr;
     const char *(*class_get_namespace)(void *)=nullptr;
     void *(*class_get_parent)(void *)=nullptr;
+    void *(*class_get_declaring_type)(void *)=nullptr;
     void *(*class_get_nested_types)(void *,void **)=nullptr;
     const void *(*class_get_type)(void *)=nullptr;
     void *(*class_from_type)(const void *)=nullptr;

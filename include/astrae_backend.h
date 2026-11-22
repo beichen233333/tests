@@ -30,7 +30,7 @@ ASTRAE_EXPORT int Java_com_nc_astraeoffline_OfflineBridge_getActions(void *env, 
 ASTRAE_EXPORT void Java_com_nc_astraeoffline_OfflineBridge_requestAction(void *env, void *clazz, int action);
 /* Stage 3 managed-message integration. Caller must execute these only inside the target game's IL2CPP process. */
 ASTRAE_EXPORT int AstraeOffline_DispatchManagedMessage(void *network_object, const char *message_class_name, uint32_t argc, void **constructor_args);
-/* Inference works only when the class name contains the protocol name; nested leaf "Request" types fail closed. */
+/* Infers nested Request/Response protocol names using IL2CPP declaring-type metadata. */
 ASTRAE_EXPORT int AstraeOffline_HandleManagedRequest(void *network_object, const void *request_object);
 /* Preferred nested-message entry: protocol_name must explicitly identify e.g. AccountLogin.Request. */
 ASTRAE_EXPORT int AstraeOffline_HandleManagedRequestForProtocol(void *network_object, const char *protocol_name, const void *request_object);

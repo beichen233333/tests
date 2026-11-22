@@ -16,6 +16,7 @@ TOOLBIN="$NDK/toolchains/llvm/prebuilt/$HOST_TAG/bin"
 NM="$TOOLBIN/llvm-nm"
 READELF="$TOOLBIN/llvm-readelf"
 if [[ ! -x "$NM" || ! -x "$READELF" ]]; then echo "ERROR: NDK LLVM tools missing under $TOOLBIN" >&2; exit 2; fi
+python3 "$ROOT/scripts/generate_embedded_assets.py"
 BUILD_DIR="${BUILD_DIR:-$ROOT/build-android-arm64}"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 cmake -S "$ROOT" -B "$BUILD_DIR" \

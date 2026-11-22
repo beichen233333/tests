@@ -15,7 +15,7 @@ int main(int argc,char **argv){
     const std::string assets=argv[1],save=argv[2];
     std::filesystem::remove_all(save);
     assert(AstraeOffline_Init(save.c_str(),assets.c_str())==1);
-    assert(std::string(AstraeOffline_Version()).find("1.0.0-stage4")!=std::string::npos);
+    assert(std::string(AstraeOffline_Version()).find("1.0.0-stage5")!=std::string::npos);
     auto login=call("AccountLogin.Request","{}");
     assert(login.find("AccountUserInfo")!=std::string::npos);
     auto cheat=call("DevCheat.Request","{\"Rewards\":[{\"Type\":1,\"TableId\":1001,\"Count\":500}]}");

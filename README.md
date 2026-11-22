@@ -44,3 +44,8 @@ python3 scripts/package_source.py --output dist/AstraeOfflineBackend-source.zip
 - 安装固定版本 Android NDK，构建 `arm64-v8a`；
 - 生成源码 ZIP 和 Android ARM64 二进制 ZIP；
 - 通过 Actions Artifacts 上传；推送版本标签时同时附加到 GitHub Release。
+
+
+## 2026-11-22 登录链路修订
+
+本版本增加内嵌 JSON 资源、IL2CPP 嵌套协议名推断、Android ARM64 自动初始化线程，以及带 16 字节原始指纹校验的 `local_request`（Hook #5）接管入口。修订范围与未完成项见 `REPAIR_NOTES_2026-11-22.md`。当前只恢复 39 个原始 Hook 中的 1 个，不能视为全行为等价；必须在目标游戏版本上完成 Android 构建和真机登录/大厅回放验证。

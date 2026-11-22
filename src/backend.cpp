@@ -1,4 +1,5 @@
 #include "backend.hpp"
+#include "embedded_assets.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -23,7 +24,7 @@ static bool mkdirs(const std::string &p){
     struct stat st{};
     return stat(p.c_str(),&st)==0&&S_ISDIR(st.st_mode);
 }
-static bool read_file(const std::string &p,std::string &out,size_t limit=32*1024*1024){FILE *f=std::fopen(p.c_str(),"rb");if(!f)return false;if(std::fseek(f,0,SEEK_END)!=0){std::fclose(f);return false;}long n=std::ftell(f);if(n<0||size_t(n)>limit){std::fclose(f);return false;}std::rewind(f);out.resize(size_t(n));size_t got=out.empty()?0:std::fread(out.data(),1,out.size(),f);std::fclose(f);if(got!=out.size()){out.resize(got);return false;}return true;}
+static bool read_file(const std::string &p,std::string &out,size_t limit=32*1024*1024){FILE *f=std::fopen(p.c_str(),"rb");if(!f){if(!assets::read_embedded_asset(p,out))return false;return out.size()<=limit;}if(std::fseek(f,0,SEEK_END)!=0){std::fclose(f);return false;}long n=std::ftell(f);if(n<0||size_t(n)>limit){std::fclose(f);return false;}std::rewind(f);out.resize(size_t(n));size_t got=out.empty()?0:std::fread(out.data(),1,out.size(),f);std::fclose(f);if(got!=out.size()){out.resize(got);return false;}return true;}
 static std::string trim_protocol(std::string p){auto pos=p.rfind(".Request");if(pos!=std::string::npos&&pos+8==p.size())p.resize(pos);return p;}
 static std::string str(const J &v,const char *k,const std::string &d={}){return v[k].as_string(d);}
 static uint64_t u64(const J &v,const char *k,uint64_t d=0){return v[k].as_u64(d);} static uint64_t u64(const J &v,uint64_t d=0){return v.as_u64(d);}
@@ -345,7 +346,7 @@ std::string Backend::diagnostics_json(){
     bool ready=false;{std::lock_guard<std::mutex> guard(mutex_);ready=initialized_;}
     if(!ready&&!init("",""))return "{\"ready\":false,\"error\":\"init_failed\"}";
     std::lock_guard<std::mutex> lk(mutex_);
-    J out=j_obj();out["ready"]=initialized_;out["version"]="AstraeOfflineBackend-Reconstruction/1.0.0-stage4";out["saveDirectory"]=save_dir_;out["tableDirectory"]=table_dir_;out["schemaCount"]=uint64_t(schemas_.size());out["requestCount"]=uint64_t(request_names_.size());out["responseCount"]=uint64_t(response_names_.size());out["tableCount"]=uint64_t(tables_.size());out["tableRowCount"]=uint64_t(table_row_count_);out["storeRevision"]=u64(state_,"StoreRevision");out["schemaVersion"]=u64(state_,"SchemaVersion");out["storeRecovery"]=last_store_recovery_;J counts=j_obj();for(const auto &kv:protocol_routes_){uint64_t n=counts[kv.second].as_u64(0);counts[kv.second]=n+1;}out["routes"]=counts;out["mappedRequestCount"]=uint64_t(std::count_if(protocol_routes_.begin(),protocol_routes_.end(),[](const auto &kv){return kv.second!="unmapped";}));return json::dump(out,true);
+    J out=j_obj();out["ready"]=initialized_;out["version"]="AstraeOfflineBackend-Reconstruction/1.0.0-stage5";out["saveDirectory"]=save_dir_;out["tableDirectory"]=table_dir_;out["schemaCount"]=uint64_t(schemas_.size());out["requestCount"]=uint64_t(request_names_.size());out["responseCount"]=uint64_t(response_names_.size());out["tableCount"]=uint64_t(tables_.size());out["tableRowCount"]=uint64_t(table_row_count_);out["storeRevision"]=u64(state_,"StoreRevision");out["schemaVersion"]=u64(state_,"SchemaVersion");out["storeRecovery"]=last_store_recovery_;J counts=j_obj();for(const auto &kv:protocol_routes_){uint64_t n=counts[kv.second].as_u64(0);counts[kv.second]=n+1;}out["routes"]=counts;out["mappedRequestCount"]=uint64_t(std::count_if(protocol_routes_.begin(),protocol_routes_.end(),[](const auto &kv){return kv.second!="unmapped";}));return json::dump(out,true);
 }
 std::string Backend::protocol_catalog_json(){
     bool ready=false;{std::lock_guard<std::mutex> guard(mutex_);ready=initialized_;}

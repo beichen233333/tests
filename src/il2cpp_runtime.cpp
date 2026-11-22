@@ -46,6 +46,7 @@ void Runtime::resolve_symbols(){
     ASTRAE_BIND(class_get_name,"il2cpp_class_get_name");
     ASTRAE_BIND(class_get_namespace,"il2cpp_class_get_namespace");
     ASTRAE_BIND(class_get_parent,"il2cpp_class_get_parent");
+    ASTRAE_BIND(class_get_declaring_type,"il2cpp_class_get_declaring_type");
     ASTRAE_BIND(class_get_nested_types,"il2cpp_class_get_nested_types");
     ASTRAE_BIND(class_get_type,"il2cpp_class_get_type");
     ASTRAE_BIND(class_from_type,"il2cpp_class_from_type");

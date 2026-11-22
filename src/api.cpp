@@ -22,6 +22,13 @@ static std::mutex g_il2cpp_error_mutex;
 static std::string g_il2cpp_last_error;
 static void set_il2cpp_error(const std::string &s){std::lock_guard<std::mutex> lock(g_il2cpp_error_mutex);g_il2cpp_last_error=s;}
 static std::string get_il2cpp_error(){std::lock_guard<std::mutex> lock(g_il2cpp_error_mutex);return g_il2cpp_last_error;}
+static void *find_nested_declaring_type(const astrae::il2cpp::Api &api,astrae::il2cpp::Runtime &runtime,void *nested){
+    if(!nested)return nullptr;if(api.class_get_declaring_type){void *owner=api.class_get_declaring_type(nested);if(owner)return owner;}
+    if(!api.domain_get_assemblies||!api.assembly_get_image||!api.image_get_class_count||!api.image_get_class||!api.class_get_nested_types)return nullptr;
+    size_t assembly_count=0;void **assemblies=api.domain_get_assemblies(runtime.domain(),&assembly_count);if(!assemblies)return nullptr;
+    for(size_t i=0;i<assembly_count;++i){const void *image=api.assembly_get_image(assemblies[i]);if(!image)continue;size_t class_count=api.image_get_class_count(image);if(class_count>500000)class_count=500000;for(size_t j=0;j<class_count;++j){void *outer=api.image_get_class(image,j);if(!outer)continue;void *iter=nullptr,*child=nullptr;while((child=api.class_get_nested_types(outer,&iter)))if(child==nested)return outer;}}
+    return nullptr;
+}
 extern "C" {
 int Java_com_nc_astraeoffline_OfflineBridge_getActions(void *,void *){return 0;}
 void Java_com_nc_astraeoffline_OfflineBridge_requestAction(void *,void *,int){}
@@ -35,7 +42,7 @@ char *AstraeOffline_GetDiagnostics(void){try{return copy_out(astrae::Backend::in
 char *AstraeOffline_GetProtocolCatalog(void){try{return copy_out(astrae::Backend::instance().protocol_catalog_json());}catch(...){return copy_out("{}");}}
 char *AstraeOffline_ValidateRequest(const char *protocol,const char *request_json){try{return copy_out(astrae::Backend::instance().validate_request_json(safe(protocol),safe(request_json)));}catch(...){return copy_out("{\"valid\":false,\"error\":\"InternalError\"}");}}
 void AstraeOffline_Free(void *p){std::free(p);}
-const char *AstraeOffline_Version(void){return "AstraeOfflineBackend-Reconstruction/1.0.0-stage4";}
+const char *AstraeOffline_Version(void){return "AstraeOfflineBackend-Reconstruction/1.0.0-stage5";}
 int AstraeOffline_DispatchManagedMessage(void *network_object,const char *message_class_name,uint32_t argc,void **constructor_args){
     using astrae::il2cpp::Runtime;
     try{
@@ -93,7 +100,11 @@ int AstraeOffline_HandleManagedRequest(void *network_object,const void *request_
         void *klass=api.object_get_class(const_cast<void*>(request_object));if(!klass){set_il2cpp_error("request object has no IL2CPP class");return 0;}
         const char *raw_name=api.class_get_name(klass);if(!raw_name||!*raw_name){set_il2cpp_error("request class name is unavailable");return 0;}
         std::string name=raw_name;const std::string request_suffix=".Request",response_suffix=".Response";
-        if(name=="Request"||name=="Response"){set_il2cpp_error("nested IL2CPP type name does not contain its outer protocol; use AstraeOffline_HandleManagedRequestForProtocol");return 0;}
+        if(name=="Request"||name=="Response"){
+            void *outer=find_nested_declaring_type(api,rt,klass);const char *outer_name=outer&&api.class_get_name?api.class_get_name(outer):nullptr;
+            if(!outer_name||!*outer_name){set_il2cpp_error("nested request protocol could not be inferred: il2cpp_class_get_declaring_type and nested-type enumeration returned no owner");return 0;}
+            name=std::string(outer_name)+request_suffix;
+        }
         if(name.size()>=response_suffix.size()&&name.compare(name.size()-response_suffix.size(),response_suffix.size(),response_suffix)==0)name.resize(name.size()-response_suffix.size());
         if(name.size()<request_suffix.size()||name.compare(name.size()-request_suffix.size(),request_suffix.size(),request_suffix)!=0)name+=request_suffix;
         return AstraeOffline_HandleManagedRequestForProtocol(network_object,name.c_str(),request_object);
