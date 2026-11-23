@@ -16,9 +16,9 @@ ShadowHook 官方手册也明确要求先初始化再调用 Hook API，并提示
 
 ## 当前运行状态（重要）
 
-当前版本**尚未实现完整大厅启动链，不是可正常游玩的完整单机版**。最新设备日志已证明，Hook #3 以 direct-replacement 模式消费登录输入：每次 `touch` 都进入自研回调，但由于 `character99_tables` 及后续 helper 未完成而 fail-closed 返回；该模式不会调用原游戏 trampoline，因此登录动画保持不变是当前诊断构建的预期行为，不是点击控件或 ShadowHook 故障。新版本额外枚举 DataManager 的实际 CustomDataLoader/DBLoader 和 Character_LevelFactor/GrowthRecipe 运行时对象图，为完成步骤 2 提供字段/泛型依据。Hook #3 在 Unity 主线程验证 `controller+0x10` 的 DataManager 与 `controller+0xb0` 的 Account 后，已执行参考顺序中的第 1 步 `artifact_capacity_tables`（Common+0xc8 的 SecureInt 容量设为 9999 并通过 Getter 回读验证）。回调会借用正在执行的 Managed 调用栈对象引用，不在同步预检中创建或释放临时 GCHandle。第 2 步 `character99_tables` 和后续强制前置链尚未全部移植，因此回调仍明确 fail-closed，不调用 `EnterLobby()` / `PlayFirstDay()`。这是一种防止将不完整状态送入大厅的保护状态；登录/加载界面继续停留属于当前预期结果，不能把它当成单机运行完成。
+当前版本**尚未实现完整大厅启动链，不是可正常游玩的完整单机版**。最新上传的设备日志 Build ID `f6b3be8929b7-a2f7eea92f87cbf9` 明确显示 `local_request_direct_hook=OFF`；同时旧版 Hook #3 direct-replacement 在初始化链未完成时直接返回，不调用原游戏 touch，因此登录动画不响应是该旧二进制的直接结果。当前源码已经改为 Android 标准构建先安装 Hook #5，再安装 Hook #3；自定义前置链未完成时，只有在 Hook #5 确认安装成功后，Hook #3 才通过 ShadowHook `SHADOWHOOK_CALL_PREV` 转发原游戏 touch。Hook #5 将请求送入本地 Backend，未映射请求返回本地 ErrorPacket，不会放行到原网络实现；但其业务覆盖仍不完整，不能宣称已完成离线单机。
 
-参考 ELF 中 `touch()` 的恢复顺序与依赖已记录在 `docs/REFERENCE_TOUCH_SEQUENCE.md`。其中 `bootstrap(account)` 不是一个简单赋值操作，而是串联账户、余额、基金会、邮件、卡池、农场、Raid、日期、设施、Guide、每日任务、剧情包任务和谜题的多级恢复。只有这些步骤逐项移植并且每步的返回状态、Managed 对象和持久化结果均验证成功，才允许恢复大厅分支。Hook #5 本地请求替换默认关闭且仍属部分业务实现；在协议请求/响应闭环经过实际游戏路径验证前，不应启用它。
+参考 ELF 中 `touch()` 的完整恢复顺序与依赖已记录在 `docs/REFERENCE_TOUCH_SEQUENCE.md`。`bootstrap(account)` 串联账户、余额、基金会、邮件、卡池、农场、Raid、日期、设施、Guide、每日任务、剧情包任务和谜题等多级恢复。只有这些步骤逐项移植并且每步的返回状态、Managed 对象和持久化结果均验证成功，才允许自研大厅 dispatcher 调用 `EnterLobby()` / `PlayFirstDay()`。
 
 ```bash
 export ANDROID_NDK_HOME=/path/to/android-ndk
@@ -29,7 +29,7 @@ bash scripts/build_android_arm64.sh
 
 ## 分阶段启用
 
-标准 Android 脚本默认启用 Runtime 和大厅 Hook #3，#5 仍保持关闭。只有需要隔离定位加载/初始化故障时才使用前两种诊断配置：
+标准 Android 脚本默认启用 Runtime、Hook #5 本地请求拦截和 Hook #3。Hook #5 必须先成功安装，Hook #3 才会安装；如果 Hook #5 被显式关闭，构建脚本会拒绝同时启用 Hook #3。
 
 **1. 仅加载 SO（显式诊断模式，非大厅模式）**
 
@@ -45,16 +45,7 @@ ASTRAE_ENABLE_TOUCH_DIRECT_HOOK=OFF \
 bash scripts/build_android_arm64.sh
 ```
 
-**3. 启用 Hook #3 预检（不会进入大厅；首次启用时自动获取官方 ShadowHook v2.0.1，并启用 direct-address-only 补丁）**
-
-```bash
-ASTRAE_ENABLE_RUNTIME_AUTOSTART=ON \
-ASTRAE_ENABLE_TOUCH_DIRECT_HOOK=ON \
-ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK=OFF \
-bash scripts/build_android_arm64.sh
-```
-
-**4. Hook #5 请求替换（目前仍是部分业务实现，默认关闭）**
+**3. 启用 Hook #3 入口回退和 Hook #5 本地请求拦截（初始化链不完整时，点击会转发到原 touch；不会伪称已完整离线）**
 
 ```bash
 ASTRAE_ENABLE_RUNTIME_AUTOSTART=ON \
@@ -63,7 +54,16 @@ ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK=ON \
 bash scripts/build_android_arm64.sh
 ```
 
-当前预检版本正常情况下应看到 `touch managed fields recovered` 和 `lobby dispatch blocked after object validation`，不应再看到 `invoking UILoginPageController.EnterLobby`。如果设备仍闪退，必须同时抓取 Android crash/tombstone 栈；如果不闪退但停留在加载画面，这是当前 fail-closed 的预期限制，不代表已经完成大厅还原。Hook #5 不应在业务处理尚未完整时打开。
+**4. 只诊断 Hook #5（不安装 Hook #3，保留原登录入口）**
+
+```bash
+ASTRAE_ENABLE_RUNTIME_AUTOSTART=ON \
+ASTRAE_ENABLE_TOUCH_DIRECT_HOOK=OFF \
+ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK=ON \
+bash scripts/build_android_arm64.sh
+```
+
+当前阶段应看到 `Hook #5 local_request installed before Hook #3`，以及在前置链不完整时的 `forwarding this tap to the original game touch`。如果日志仍显示 `local_request_direct_hook=OFF`，说明没有使用本源码标准 Android 构建配置；新的 CMake 会拒绝这种不安全组合。Hook #5 只保证请求经过本地 Backend，不保证尚未实现的协议能够成功；未知请求返回 ErrorPacket。
 
 ## ShadowHook 来源
 
@@ -141,7 +141,7 @@ On Android, the ELF constructor initializes the native diagnostic logger. It wri
 
 The file is app-specific external storage and is opened with owner-only permissions. Logcat receives the same messages under tag `AstraeOffline`. If Android refuses the file path, `debug.log` cannot be created; the path and errno are still reported to logcat. The logger never aborts the game when file output is unavailable.
 
-The standard Android build script now defaults to Runtime Autostart and Hook #3 preflight enabled. The callback currently blocks lobby dispatch until the recovered touch initialization chain is complete; the incomplete request Hook #5 stays disabled. The output folder contains only `libastraeoffline.so`; ShadowHook is statically linked in direct-address-only mode, with its private linker monitor disabled and no companion probe ELF. Override explicitly for diagnosis: set `ASTRAE_ENABLE_RUNTIME_AUTOSTART=OFF` or `ASTRAE_ENABLE_TOUCH_DIRECT_HOOK=OFF` to create a passive SO. A passive SO does not enter the offline lobby.
+The standard Android build script defaults to Runtime Autostart, Hook #5 local request interception and Hook #3 touch replacement. Hook #5 is installed first. If the custom lobby prelude is incomplete, Hook #3 forwards the click to the original game touch via `SHADOWHOOK_CALL_PREV`; the local request hook keeps subsequent requests inside the local Backend and answers unsupported requests with a local ErrorPacket. Android configuration rejects Hook #3 enabled with Hook #5 disabled. The Hook #5 route coverage is still partial and must not be described as a complete offline game. The output folder contains only `libastraeoffline.so`; ShadowHook is statically linked in direct-address-only mode, with its private linker monitor disabled and no companion probe ELF. Override explicitly for diagnosis: set `ASTRAE_ENABLE_RUNTIME_AUTOSTART=OFF` or `ASTRAE_ENABLE_TOUCH_DIRECT_HOOK=OFF` to create a passive SO. A passive SO does not enter the offline lobby.
 
 The log records constructor/build flags, IL2CPP load/domain readiness, resolved symbol counts, ManagedWire schema load, Backend and Store initialization, login controller and `EnterLobby` readiness, ShadowHook version, target RVA/fingerprint, install result, touch callback count, managed request/response outcomes and a 15-second Hook watchdog.
 

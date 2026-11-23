@@ -79,22 +79,27 @@ void runtime_worker_impl(){
     if(!store_open(kCompatStoreDirectory)){ASTRAE_LOGW("compat Store open failed: %s; touch route will not synthesize first-day content bits",store_error());}
     else{ASTRAE_LOGI("compat Store opened; content_bits=%llu (preserved; no synthetic first-day completion is applied)",static_cast<unsigned long long>(store_content_bits()));}
     astrae::lobby::register_local_activity_period_provider();ASTRAE_LOGI("registered local activity-period provider");
+    bool local_request_ready=false;
+#if defined(ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK)
+    ASTRAE_LOGI("Hook #5 local_request is enabled; installing local request interception before any touch replacement");
+    std::string request_error;if(!astrae::hooks::install_local_request_hook(&request_error))ASTRAE_LOGE("Hook #5 installation failed: %s",request_error.c_str());else{local_request_ready=true;ASTRAE_LOGI("Hook #5 local_request installed before Hook #3; ManagedWire schema=%s",astrae::managed::ManagedWire::instance().schema_report().c_str());}
+#else
+    ASTRAE_LOGW("Hook #5 local_request is disabled; original game touch must not be replaced because requests would not be guaranteed local");
+#endif
 #if defined(ASTRAE_ENABLE_TOUCH_DIRECT_HOOK)
-    ASTRAE_LOGI("Hook #3 enabled in this build; waiting for _AT.UI.UILoginPageController");
-    if(!wait_for_managed_class("_AT.UI.UILoginPageController",kManagedWaitTimeoutMs,&error)){ASTRAE_LOGE("Hook #3 cannot be installed: %s",error.c_str());}
-    else if(!wait_for_lobby_entry_method(kManagedWaitTimeoutMs,&error)){ASTRAE_LOGE("Hook #3 cannot be installed: %s",error.c_str());}
+    if(!local_request_ready){ASTRAE_LOGE("Hook #3 installation skipped: Hook #5 local request interception is a required safety prerequisite while touch prelude is incomplete");}
     else{
-        ASTRAE_LOGI("login controller and EnterLobby method are ready; delaying ShadowHook init by %u ms",kGameSettleDelayMs);std::this_thread::sleep_for(std::chrono::milliseconds(kGameSettleDelayMs));
-        std::string touch_error;if(!astrae::hooks::install_touch_hook(&touch_error))ASTRAE_LOGE("Hook #3 installation FAILED; original game code remains untouched: %s",touch_error.c_str());
-        else ASTRAE_LOGI("Hook #3 touch successfully installed; waiting for first touch callback");
+        ASTRAE_LOGI("Hook #3 enabled; waiting for _AT.UI.UILoginPageController");
+        if(!wait_for_managed_class("_AT.UI.UILoginPageController",kManagedWaitTimeoutMs,&error))ASTRAE_LOGE("Hook #3 cannot be installed: %s",error.c_str());
+        else if(!wait_for_lobby_entry_method(kManagedWaitTimeoutMs,&error))ASTRAE_LOGE("Hook #3 cannot be installed: %s",error.c_str());
+        else{
+            ASTRAE_LOGI("login controller and EnterLobby method are ready; delaying Hook #3 init by %u ms",kGameSettleDelayMs);std::this_thread::sleep_for(std::chrono::milliseconds(kGameSettleDelayMs));
+            std::string touch_error;if(!astrae::hooks::install_touch_hook(&touch_error))ASTRAE_LOGE("Hook #3 installation FAILED; original game code remains untouched: %s",touch_error.c_str());
+            else ASTRAE_LOGI("Hook #3 touch replacement installed after Hook #5; incomplete custom prelude will forward the tap to original touch");
+        }
     }
 #else
-    ASTRAE_LOGE("Hook #3 is DISABLED in this build. Backend may initialize, but the original login loading flow is not redirected to the offline lobby.");
-#endif
-#if defined(ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK)
-    ASTRAE_LOGW("Hook #5 local_request is enabled but remains partial; installing only because build explicitly requested it");std::string request_error;if(!astrae::hooks::install_local_request_hook(&request_error))ASTRAE_LOGE("Hook #5 installation failed: %s",request_error.c_str());else ASTRAE_LOGI("Hook #5 local_request installed");
-#else
-    ASTRAE_LOGI("Hook #5 local_request is disabled (expected; partial protocol coverage)");
+    ASTRAE_LOGW("Hook #3 is disabled; original login touch remains untouched");
 #endif
     ASTRAE_LOGI("bootstrap initialization complete; entering 15-second lobby-hook watchdog");uint64_t previous_calls=0;uint64_t elapsed_seconds=0;
     for(;;){std::this_thread::sleep_for(std::chrono::seconds(15));elapsed_seconds+=15;const uint64_t calls=astrae::hooks::touch_hook_call_count();

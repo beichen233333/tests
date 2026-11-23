@@ -4,6 +4,7 @@
 #include "astrae_backend.h"
 #include "lobby_restore.hpp"
 #include "debug_log.hpp"
+#include "touch_fallback_policy.hpp"
 #include <array>
 #include <atomic>
 #include <cstring>
@@ -106,9 +107,14 @@ static void local_request_replacement(void *network,void *,void *,void *request,
 static void touch_replacement(void *controller,void *method){
     SHADOWHOOK_STACK_SCOPE();
     const uint64_t call=g_calls[3].fetch_add(1,std::memory_order_relaxed)+1;ASTRAE_LOGI("Hook #3 touch entered: call=%llu controller=%p method=%p",static_cast<unsigned long long>(call),controller,method);
-    try{std::string error;if(!astrae::lobby::touch_enter_lobby(controller,&error))ASTRAE_LOGE("touch dispatcher rejected call %llu: %s",static_cast<unsigned long long>(call),error.c_str());else ASTRAE_LOGI("touch dispatcher completed call %llu",static_cast<unsigned long long>(call));}
-    catch(const std::exception &exception){ASTRAE_LOGE("touch proxy exception: %s",exception.what());}
-    catch(...){ASTRAE_LOGE("touch proxy unknown exception");}
+    bool restored=false;std::string error;
+    try{restored=astrae::lobby::touch_enter_lobby(controller,&error);if(restored){ASTRAE_LOGI("touch dispatcher completed call %llu; custom offline route owns this event",static_cast<unsigned long long>(call));return;}}
+    catch(const std::exception &exception){error=std::string("touch prelude exception: ")+exception.what();ASTRAE_LOGE("touch proxy exception: %s",exception.what());}
+    catch(...){error="touch prelude raised an unknown exception";ASTRAE_LOGE("touch proxy unknown exception");}
+    if(should_forward_original_touch(restored,g_local_request_installed.load(std::memory_order_acquire))){
+        ASTRAE_LOGW("Hook #3 fallback: custom prelude is incomplete (%s); forwarding this tap to the original game touch through ShadowHook previous-function chain; Hook #5 local request interception is active",error.c_str());
+        SHADOWHOOK_CALL_PREV(touch_replacement,controller,method);
+    }else ASTRAE_LOGE("Hook #3 tap remains blocked because custom prelude is incomplete and Hook #5 is not installed; refusing to call the original online path: %s",error.c_str());
 }
 static void text_locale_hook(void *a,int b,int c,void *d){SHADOWHOOK_STACK_SCOPE();ASTRAE_PROXY_BEGIN(9);SHADOWHOOK_CALL_PREV(text_locale_hook,a,b,c,d);}
 static void banner_click_hook(void *a,int b,void *c){SHADOWHOOK_STACK_SCOPE();ASTRAE_PROXY_BEGIN(12);SHADOWHOOK_CALL_PREV(banner_click_hook,a,b,c);}

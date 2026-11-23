@@ -1,4 +1,5 @@
 #include "lobby_restore.hpp"
+#include "character99_object_graph.hpp"
 #include "il2cpp_runtime.hpp"
 #include "managed_wire.hpp"
 #include "embedded_assets.hpp"
@@ -292,6 +293,8 @@ std::atomic<bool> g_touch_lobby_entered{false};
 std::mutex g_character99_metadata_mutex;
 std::unordered_set<std::string> g_character99_metadata_emitted;
 std::atomic<bool> g_character99_metadata_complete{false};
+std::mutex g_character99_xml_param_mutex;
+std::unordered_set<std::string> g_character99_xml_param_emitted;
 std::mutex g_character99_loader_metadata_mutex;
 std::unordered_set<std::string> g_character99_loader_metadata_emitted;
 std::atomic<bool> g_character99_loader_metadata_complete{false};
@@ -323,6 +326,26 @@ void emit_managed_object_metadata(il2cpp::Runtime &runtime,const il2cpp::Api &ap
     while(std::getline(lines,line))ASTRAE_LOGI("character99 loader metadata type=%s line=%zu: %s",type.c_str(),index++,line.c_str());
     ASTRAE_LOGI("character99 loader metadata snapshot end: tag=%s type=%s",tag,type.c_str());
 }
+void emit_fromxml_parameter_metadata(il2cpp::Runtime &runtime,const il2cpp::Api &api,const char *root_type){
+    std::string class_error;void *root_class=runtime.find_class(root_type,&class_error);
+    if(!root_class){ASTRAE_LOGW("character99 XML root parameter probe: root=%s unavailable: %s",root_type,class_error.c_str());return;}
+    void *from_xml=runtime.find_method(root_class,"FromXml",1);
+    if(!from_xml||!api.method_get_param||!api.class_from_type){ASTRAE_LOGW("character99 XML root parameter probe: root=%s FromXml/1 or type reflection unavailable",root_type);return;}
+    const void *parameter_type=api.method_get_param(from_xml,0);void *parameter_class=parameter_type?api.class_from_type(parameter_type):nullptr;
+    if(!parameter_class){ASTRAE_LOGW("character99 XML root parameter probe: root=%s FromXml argument class could not be resolved",root_type);return;}
+    const char *name=api.class_get_name?api.class_get_name(parameter_class):nullptr;const char *ns=api.class_get_namespace?api.class_get_namespace(parameter_class):nullptr;
+    if(!name||!*name){ASTRAE_LOGW("character99 XML root parameter probe: root=%s parameter class has no name",root_type);return;}
+    const std::string full=(ns&&*ns?std::string(ns)+".":std::string())+name;
+    {std::lock_guard<std::mutex> lock(g_character99_xml_param_mutex);if(!g_character99_xml_param_emitted.insert(full).second)return;}
+    char *type_name=api.type_get_name?api.type_get_name(parameter_type):nullptr;
+    ASTRAE_LOGI("character99 XML root parameter resolved: root=%s method=FromXml/1 argument=%s class=%p",root_type,type_name?type_name:full.c_str(),parameter_class);
+    if(type_name&&api.free_mem)api.free_mem(type_name);
+    const std::string description=runtime.describe_class(full,256,256);
+    ASTRAE_LOGI("character99 XML root metadata snapshot begin: %s",full.c_str());
+    std::istringstream lines(description);std::string line;size_t index=0;
+    while(std::getline(lines,line))ASTRAE_LOGI("character99 XML root metadata type=%s line=%zu: %s",full.c_str(),index++,line.c_str());
+    ASTRAE_LOGI("character99 XML root metadata snapshot end: %s",full.c_str());
+}
 }
 bool touch_enter_lobby(void *login_controller,std::string *error){
     ASTRAE_LOGI("touch_enter_lobby called: controller=%p",login_controller);
@@ -348,26 +371,23 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
     // game's actual table-root classes and generic collection declarations, rather than
     // guessing from the static factor/recipe record layouts alone.
     if(!g_character99_loader_metadata_complete.load(std::memory_order_acquire)){
-        void *data_loader=load_pointer(data_manager,0x10);
-        void *db_loader=load_pointer(data_manager,0x18);
-        void *level_slot=load_pointer(data_loader,0xb8);
-        void *level_root=load_pointer(level_slot,0x18);
-        void *level_data=load_pointer(level_root,0x10);
-        void *growth_root=load_pointer(data_loader,0x1e0);
-        void *growth_data=load_pointer(growth_root,0x10);
-        void *growth_dictionary=load_pointer(growth_root,0x18);
-        ASTRAE_LOGI("character99 loader graph from reference offsets: data_loader=%p db_loader=%p level_slot=data_loader+0xb8:%p level_root=slot+0x18:%p level_data=root+0x10:%p growth_root=data_loader+0x1e0:%p growth_data=root+0x10:%p growth_dictionary=root+0x18:%p",data_loader,db_loader,level_slot,level_root,level_data,growth_root,growth_data,growth_dictionary);
-        emit_managed_object_metadata(runtime,api,"DataManager._dataLoader",data_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        emit_managed_object_metadata(runtime,api,"DataManager._dbLoader",db_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.slot",level_slot,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.root",level_root,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.data",level_data,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        emit_managed_object_metadata(runtime,api,"GrowthRecipe.root",growth_root,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        emit_managed_object_metadata(runtime,api,"GrowthRecipe.data",growth_data,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        emit_managed_object_metadata(runtime,api,"GrowthRecipe.dictionary",growth_dictionary,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
-        bool complete=level_root&&level_data&&growth_root&&growth_data&&growth_dictionary;
-        if(complete){g_character99_loader_metadata_complete.store(true,std::memory_order_release);ASTRAE_LOGI("character99 loader graph probe complete; actual LevelFactor and GrowthRecipe roots resolved");}
-        else ASTRAE_LOGW("character99 loader graph probe incomplete; waiting for CustomDataLoader table roots; metadata will retry on the next touch callback");
+        const Character99ObjectGraph graph=resolve_character99_object_graph(data_manager);
+        ASTRAE_LOGI("character99 loader graph (DWARF-verified offsets): data_loader=%p db_loader=%p level_loader=%p level_root=%p level_data=%p level_dictionary=%p growth_loader=%p growth_error_message=%p growth_root=loader+0x18:%p growth_data=root+0x10:%p growth_dictionary=root+0x18:%p",graph.data_loader,graph.db_loader,graph.level_factor_loader,graph.level_factor_root,graph.level_factor_data,graph.level_factor_dictionary,graph.growth_recipe_loader,graph.growth_recipe_error_message,graph.growth_recipe_root,graph.growth_recipe_data,graph.growth_recipe_dictionary);
+        emit_managed_object_metadata(runtime,api,"DataManager._dataLoader",graph.data_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"DataManager._dbLoader",graph.db_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.loader",graph.level_factor_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.root",graph.level_factor_root,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.data",graph.level_factor_data,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"Character_LevelFactor.dictionary",graph.level_factor_dictionary,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.loader",graph.growth_recipe_loader,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.errorMessage",graph.growth_recipe_error_message,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.root",graph.growth_recipe_root,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.data",graph.growth_recipe_data,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        emit_managed_object_metadata(runtime,api,"GrowthRecipe.dictionary",graph.growth_recipe_dictionary,g_character99_loader_metadata_emitted,g_character99_loader_metadata_mutex);
+        const bool level_factor_graph_ok=graph.level_factor_loader&&graph.level_factor_root&&graph.level_factor_data&&graph.level_factor_dictionary;
+        const bool growth_recipe_graph_ok=graph.growth_recipe_loader&&graph.growth_recipe_root&&graph.growth_recipe_data&&graph.growth_recipe_dictionary;
+        if(level_factor_graph_ok&&growth_recipe_graph_ok){g_character99_loader_metadata_complete.store(true,std::memory_order_release);ASTRAE_LOGI("character99 loader graph complete: LevelFactor DataList/Dictionary and GrowthRecipe DataList/Dictionary resolved");}
+        else ASTRAE_LOGW("character99 loader graph partial: LevelFactor={loader:%s root:%s data:%s dictionary:%s} GrowthRecipe={loader:%s root:%s data:%s dictionary:%s}; null GrowthRecipe.Root requires reconstruction, not an offset fallback",graph.level_factor_loader?"ready":"missing",graph.level_factor_root?"ready":"missing",graph.level_factor_data?"ready":"missing",graph.level_factor_dictionary?"ready":"missing",graph.growth_recipe_loader?"ready":"missing",graph.growth_recipe_root?"ready":"missing",graph.growth_recipe_data?"ready":"missing",graph.growth_recipe_dictionary?"ready":"missing");
     }
     if(!g_character99_metadata_complete.load(std::memory_order_acquire)){
         const char *dm_ns=api.class_get_namespace?api.class_get_namespace(dm_class):nullptr;
@@ -376,7 +396,7 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
         const char *account_type=api.class_get_name?api.class_get_name(account_class):nullptr;
         const std::string dm_full=(dm_ns&&*dm_ns?std::string(dm_ns)+".":std::string())+(dm_type?dm_type:"DataManager");
         const std::string account_full=(account_ns&&*account_ns?std::string(account_ns)+".":std::string())+(account_type?account_type:"AccountManager");
-        const std::string types[]={dm_full,account_full,"_AT.Core.DataSheet.Character_LevelFactorData","_AT.Core.DataSheet.Character_LevelFactorXmlData","_AT.Core.DataSheet.GrowthRecipeRoot","_AT.Core.DataSheet.GrowthRecipeData","_AT.Core.DataSheet.GrowthRecipeXmlData"};
+        const std::string types[]={dm_full,account_full,"_AT.Core.DataSheet.Character_LevelFactorLoader","_AT.Core.DataSheet.Character_LevelFactorRoot","_AT.Core.DataSheet.Character_LevelFactorXmlRoot","_AT.Core.DataSheet.Character_LevelFactorData","_AT.Core.DataSheet.Character_LevelFactorXmlData","_AT.Core.DataSheet.GrowthRecipeLoader","_AT.Core.DataSheet.GrowthRecipeRoot","_AT.Core.DataSheet.GrowthRecipeXmlRoot","_AT.Core.DataSheet.GrowthRecipeData","_AT.Core.DataSheet.GrowthRecipeXmlData"};
         for(const auto &type:types){
             {std::lock_guard<std::mutex> lock(g_character99_metadata_mutex);if(g_character99_metadata_emitted.count(type))continue;}
             const std::string description=runtime.describe_class(type,192,192);
@@ -385,8 +405,13 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
             ASTRAE_LOGI("character99 IL2CPP metadata snapshot end: %s",type.c_str());
             if(description.rfind("class_lookup_failed",0)!=0&&description.rfind("thread_attach_failed",0)!=0){std::lock_guard<std::mutex> lock(g_character99_metadata_mutex);g_character99_metadata_emitted.insert(type);}
         }
+        // Resolve XML Root classes from the actual FromXml parameter types. Some IL2CPP
+        // builds do not expose these nested/deserialization classes reliably through a
+        // name-only lookup, while method_get_param + class_from_type is authoritative.
+        emit_fromxml_parameter_metadata(runtime,api,"_AT.Core.DataSheet.Character_LevelFactorRoot");
+        emit_fromxml_parameter_metadata(runtime,api,"_AT.Core.DataSheet.GrowthRecipeRoot");
         bool complete=false;{std::lock_guard<std::mutex> lock(g_character99_metadata_mutex);complete=g_character99_metadata_emitted.size()>=sizeof(types)/sizeof(types[0]);}
-        if(complete){g_character99_metadata_complete.store(true,std::memory_order_release);ASTRAE_LOGI("character99 IL2CPP metadata snapshot complete; DataManager, Account, and all progression types resolved");}
+        if(complete){g_character99_metadata_complete.store(true,std::memory_order_release);ASTRAE_LOGI("character99 IL2CPP metadata snapshot complete; DataManager, Account, loaders, XML roots, data records and progression roots resolved");}
         else ASTRAE_LOGW("character99 IL2CPP metadata snapshot incomplete; only unresolved classes will be retried on the next touch callback");
     }
     // The hook runs synchronously inside the managed UILoginPageController.touch call on
@@ -408,8 +433,8 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
     // account bootstrap also contains many nested restorers, listed individually below.
     constexpr const char *implemented_not_integrated="permanent_raid_tables, battle_multiple_tables, office_wire_probe, installation_native_tables";
     constexpr const char *missing="character99_tables, seed_ticket_defaults/seed_table_defaults, permanent_raid_tables(integration pending), battle_multiple_tables(integration pending), custom_resource_tables, custom_item_tables, signed_exchange_tables, earned_unlocks/sync_unlocks, bootstrap(account){restore_balances,restore_foundation,pack_objects_cache,local_mail_count,restore_gacha,restore_farming_cache,restore_raid_cache,date_restore,installation_restore,guide_restore_cache,restore_daily_cache,restore_pack_missions,restore_puzzles}, local_account_event_login, guide_restore_cache(account,true)/initialize_guide_cache";
-    if(error)*error=std::string("reference touch initialization is incomplete; this direct-replacement Hook #3 consumes the touch event and suppresses navigation; missing: ")+missing;
-    ASTRAE_LOGE("lobby dispatch blocked after object validation; Hook #3 consumes this touch event and does not call the original game method: missing required restorations: %s",missing);
+    if(error)*error=std::string("reference touch initialization is incomplete; custom offline dispatcher is not ready; missing: ")+missing;
+    ASTRAE_LOGE("custom offline dispatcher not ready; touch_replacement must follow its configured fallback policy; missing required restorations: %s",missing);
     ASTRAE_LOGW("already reconstructed but not yet integrated into the verified touch sequence: %s",implemented_not_integrated);
     ASTRAE_LOGI("recovered live Managed roots are valid: DataManager=%p Account=%p; no EnterLobby/PlayFirstDay call was made",data_manager,account);
     return false;

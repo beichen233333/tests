@@ -30,3 +30,7 @@
 - 不分配 Managed 对象，不建立临时 GCHandle。
 - 只在已附加的 Unity 主线程 Managed 回调中运行。
 - 输出元数据本身不代表 `character99_tables` 已完成；必须继续核实字典键值类型、构造方式、列表替换方法、DataManager 写回字段和 stat cache 更新路径。
+
+## XML Root 参数类型补充
+
+当前探针还会从 `_AT.Core.DataSheet.Character_LevelFactorRoot.FromXml/1` 和 `_AT.Core.DataSheet.GrowthRecipeRoot.FromXml/1` 读取第 0 个参数的 `Il2CppType`，通过 `il2cpp_class_from_type` 反解 XML Root 的真实 Managed 类，再输出该类的字段、属性访问器和方法。这样即使 `il2cpp_class_from_name` 对反序列化 Root 类型的名字查找失败，也可以从运行时方法签名得到权威类型信息。对应日志前缀为 `character99 XML root parameter resolved` 和 `character99 XML root metadata snapshot begin`。

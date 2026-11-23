@@ -24,8 +24,13 @@ fi
 
 RUNTIME_AUTOSTART="${ASTRAE_ENABLE_RUNTIME_AUTOSTART:-ON}"
 TOUCH_HOOK="${ASTRAE_ENABLE_TOUCH_DIRECT_HOOK:-ON}"
-REQUEST_HOOK="${ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK:-OFF}"
+REQUEST_HOOK="${ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK:-ON}"
 echo "AstraeOffline Android build profile: runtime=$RUNTIME_AUTOSTART touch_hook=$TOUCH_HOOK request_hook=$REQUEST_HOOK"
+if [[ "$TOUCH_HOOK" == "ON" && "$REQUEST_HOOK" != "ON" ]]; then
+    echo "ERROR: refusing to build a touch replacement without Hook #5; it would consume the login tap while the custom prelude is incomplete." >&2
+    echo "Either enable ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK=ON or disable ASTRAE_ENABLE_TOUCH_DIRECT_HOOK=OFF." >&2
+    exit 2
+fi
 NEED_HOOK_ENGINE=OFF
 if [[ "$TOUCH_HOOK" == "ON" || "$REQUEST_HOOK" == "ON" ]]; then NEED_HOOK_ENGINE=ON; fi
 if [[ "$NEED_HOOK_ENGINE" == "ON" ]]; then
