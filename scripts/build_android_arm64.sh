@@ -81,7 +81,13 @@ if [[ "$NEED_HOOK_ENGINE" == "ON" ]]; then
     fi
     echo "Verified: ShadowHook direct-address-only profile; no companion library or linker probe is required."
 fi
-"$READELF" -h "$SO" | grep -q 'Machine:.*AArch64' || { echo "ERROR: output is not AArch64" >&2; exit 4; }
+python3 "$ROOT/scripts/verify_elf_arch.py" "$SO" --expected-abi arm64-v8a --cmake-cache "$BUILD_DIR/CMakeCache.txt" || {
+    echo "ERROR: Android output failed binary ELF architecture validation; readelf header follows:" >&2
+    "$READELF" -h "$SO" >&2 || true
+    echo "CMake ABI/compiler cache follows:" >&2
+    grep -E '^(ANDROID_ABI|CMAKE_ANDROID_ARCH_ABI|CMAKE_SYSTEM_PROCESSOR|CMAKE_C_COMPILER_TARGET|CMAKE_CXX_COMPILER_TARGET):' "$BUILD_DIR/CMakeCache.txt" >&2 || true
+    exit 4
+}
 "$READELF" -d "$SO" | grep -q 'Library soname: \[libastraeoffline.so\]' || { echo "ERROR: incorrect SONAME" >&2; exit 5; }
 python3 - "$NM" "$SO" "$ROOT/compat/original_abi/original_defined_exports.txt" <<'PY'
 import subprocess
@@ -114,6 +120,7 @@ RAW_SIZE=$(python3 -c 'import os,sys;print(os.path.getsize(sys.argv[1]))' "$OUT/
 "$STRIP" --strip-all "$OUT/libastraeoffline.so"
 "$OBJCOPY" --add-gnu-debuglink="$DEBUG_SO" "$OUT/libastraeoffline.so"
 STRIPPED_SIZE=$(python3 -c 'import os,sys;print(os.path.getsize(sys.argv[1]))' "$OUT/libastraeoffline.so")
+python3 "$ROOT/scripts/verify_elf_arch.py" "$OUT/libastraeoffline.so" --expected-abi arm64-v8a --cmake-cache "$BUILD_DIR/CMakeCache.txt"
 python3 - "$OUT/SIZE_REPORT.txt" "$RAW_SIZE" "$STRIPPED_SIZE" "$DEBUG_SO" "$BUILD_DIR/generated/embedded_assets_size.txt" <<'PY_SIZE'
 import os,sys
 report,raw,deployed,debug,asset_stats=sys.argv[1:]

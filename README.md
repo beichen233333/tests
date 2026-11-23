@@ -157,3 +157,7 @@ The log records constructor/build flags, IL2CPP load/domain readiness, resolved 
 当前源码按参考 ELF 的顺序执行 touch 前置流程：step 1 Artifact 容量、step 2 Character99 XML Root 重建、step 3 Permanent Raid、step 4 Seed（尚未移植；原始返回 false 为非致命，继续 step 5）、step 5 Battle Multiple。下一道必须完成的步骤是 step 6 `custom_resource_tables`；在它及后续 mandatory helpers 完成前，不会伪称已成功进入单机大厅。
 
 `Hook #5 installed` 只代表安装完成，不等于已处理请求。日志会分别报告 Hook #5 是否观察到回调；截至最新用户日志，Hook #5 安装后没有观察到任何 `local_request` callback，因此本地协议接管尚未得到设备证据。
+
+## Crash containment and save migration
+
+See [`docs/CRASH_AND_SAVE_RECOVERY.md`](docs/CRASH_AND_SAVE_RECOVERY.md) for the confirmed Character99 `FromXml` crash containment, legacy compat-store migration, V3 save precedence, and tutorial-state preservation rules. The Android build must be regenerated after this source change; an older binary may still execute the unsafe `FromXml` path or initialize Backend before opening the compatibility Store.

@@ -72,12 +72,15 @@ void runtime_worker_impl(){
     ASTRAE_LOGI("loading ManagedWire schema from embedded assets or assets/schema/wire_shapes.json");
     if(!astrae::managed::ManagedWire::instance().load_schema("assets/schema/wire_shapes.json",&error)){ASTRAE_LOGE("ManagedWire schema initialization failed: %s",error.c_str());return;}
     ASTRAE_LOGI("ManagedWire schema loaded: %s",astrae::managed::ManagedWire::instance().schema_report().c_str());
-    ASTRAE_LOGI("initializing offline Backend and default lobby save");
-    if(!AstraeOffline_Init(nullptr,nullptr)){ASTRAE_LOGE("offline Backend initialization failed; diagnostics follow");log_backend_diagnostics();return;}
+    // Open the legacy compatibility Store first. Its schema-v1 save is the source of
+    // truth for existing profiles; Backend then imports it once into the native schema.
+    ASTRAE_LOGI("opening compatibility Store before Backend migration: %s",kCompatStoreDirectory);
+    const bool compat_store_ready=store_open(kCompatStoreDirectory)!=0;
+    if(!compat_store_ready)ASTRAE_LOGW("compat Store open failed: %s; existing files will be retained and Backend migration will not overwrite them",store_error());
+    else ASTRAE_LOGI("compat Store opened before Backend migration; tutorial content_bits=%llu preserved",static_cast<unsigned long long>(store_content_bits()));
+    ASTRAE_LOGI("initializing offline Backend with existing-save recovery/migration");
+    if(!AstraeOffline_Init(nullptr,nullptr)){ASTRAE_LOGE("offline Backend initialization failed; existing save was not replaced with a new account; diagnostics follow");log_backend_diagnostics();return;}
     ASTRAE_LOGI("offline Backend initialized successfully");log_backend_diagnostics();
-    ASTRAE_LOGI("opening compatibility Store: %s",kCompatStoreDirectory);
-    if(!store_open(kCompatStoreDirectory)){ASTRAE_LOGW("compat Store open failed: %s; touch route will not synthesize first-day content bits",store_error());}
-    else{ASTRAE_LOGI("compat Store opened; content_bits=%llu (preserved; no synthetic first-day completion is applied)",static_cast<unsigned long long>(store_content_bits()));}
     astrae::lobby::register_local_activity_period_provider();ASTRAE_LOGI("registered local activity-period provider");
     bool local_request_ready=false;
 #if defined(ASTRAE_ENABLE_LOCAL_REQUEST_DIRECT_HOOK)

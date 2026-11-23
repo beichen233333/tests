@@ -1,5 +1,6 @@
 #include "backend.hpp"
 #include "embedded_assets.hpp"
+#include "legacy_save_migration.hpp"
 #include "debug_log.hpp"
 #include <algorithm>
 #include <cerrno>
@@ -62,28 +63,26 @@ int Backend::init(const std::string &save_dir,const std::string &table_dir){
     ASTRAE_LOGI("Backend protocol catalog loaded: %zu",protocol_routes_.size());
     load_tables();ASTRAE_LOGI("Backend embedded/external tables loaded");
     load_rules();ASTRAE_LOGI("Backend rules loaded");
-    if(!load_store()){ASTRAE_LOGW("Backend save missing/unavailable; creating default offline save at %s",save_path_.c_str());seed_defaults();if(!commit_store()){ASTRAE_LOGE("Backend could not commit new default save at %s: errno=%d (%s)",save_path_.c_str(),errno,std::strerror(errno));return 0;}}
-    // Never synthesize the first-day completion bit. The reference touch() performs
-    // account/table/cache restoration before choosing EnterLobby versus PlayFirstDay.
-    // Marking bit 0 here skips that flow and can enter the lobby with incomplete state.
+    if(!load_store()){
+        if(save_data_present_but_unusable_){ASTRAE_LOGE("Backend found existing save data but could not safely load or migrate it; refusing to create a new account. Existing files were retained. recovery=%s",last_store_recovery_.c_str());return 0;}
+        ASTRAE_LOGW("Backend found no existing save; creating the first local profile at %s",save_path_.c_str());seed_defaults();if(!commit_store()){ASTRAE_LOGE("Backend could not commit new default save at %s: errno=%d (%s)",save_path_.c_str(),errno,std::strerror(errno));return 0;}
+    }
+    // Do not synthesize a starter character or tutorial completion for an imported
+    // compatibility profile. New profiles already receive defaults in seed_defaults().
+    // A legacy profile with no characters is a valid pre-tutorial state and must stay empty.
     bool startup_changed=false;
     if(!state_["TutorialInfo"].is_object())state_["TutorialInfo"]=j_obj();
     if(!state_["characters"].is_array())state_["characters"]=j_arr();
-    if(state_["characters"].size()==0){
-        const uint64_t starter_server_id=std::max<uint64_t>(100000,state_["NextServerId"].as_u64(100000));
-        state_["characters"].push_back(make_default_character(10001,starter_server_id));
-        state_["NextServerId"]=starter_server_id+1;
-        startup_changed=true;
-    }
-    const uint64_t lobby_character_id=state_["characters"][0]["TableId"].as_u64(10001);
+    const bool has_characters=state_["characters"].size()>0;
     if(!state_["LobbyCharacterInfo"].is_object())state_["LobbyCharacterInfo"]=schema_default("LobbyCharacterInfo");
     for(const char *field:{"TableIds_Day","TableIds_Night"}){
-        if(!state_["LobbyCharacterInfo"][field].is_array())state_["LobbyCharacterInfo"][field]=j_arr();
-        if(state_["LobbyCharacterInfo"][field].size()==0){state_["LobbyCharacterInfo"][field].push_back(lobby_character_id);startup_changed=true;}
+        if(!state_["LobbyCharacterInfo"][field].is_array()){state_["LobbyCharacterInfo"][field]=j_arr();startup_changed=true;}
+        if(has_characters&&state_["LobbyCharacterInfo"][field].size()==0){state_["LobbyCharacterInfo"][field].push_back(state_["characters"][0]["TableId"].as_u64());startup_changed=true;}
     }
-    if(!state_.contains("LobbyCharacterId")){state_["LobbyCharacterId"]=lobby_character_id;startup_changed=true;}
-    if(!state_["formations"].is_array())state_["formations"]=j_arr();
-    if(state_["formations"].size()==0){
+    if(has_characters&&!state_.contains("LobbyCharacterId")){state_["LobbyCharacterId"]=state_["characters"][0]["TableId"].as_u64();startup_changed=true;}
+    if(!state_["formations"].is_array()){state_["formations"]=j_arr();startup_changed=true;}
+    if(has_characters&&state_["formations"].size()==0){
+        const uint64_t lobby_character_id=state_["characters"][0]["TableId"].as_u64();
         J formation=j_obj();formation["Index"]=int64_t(0);formation["CharacterTableIds"]=j_arr();formation["CharacterTableIds"].push_back(lobby_character_id);formation["VignetteTableIds"]=j_arr();formation["Name"]="Formation 1";state_["formations"].push_back(std::move(formation));startup_changed=true;
     }
     if(startup_changed&&!commit_store())return 0;
@@ -170,27 +169,144 @@ bool Backend::valid_state(const J &candidate,std::string *reason) const {
     if(!candidate["inventory"].is_array())return fail("inventory must be array");
     for(const auto &item:candidate["inventory"].as_array()){
         if(!item.is_object())return fail("inventory entry must be object");
-        if(!item["TableId"].as_u64())return fail("inventory TableId must be positive");
+        const int64_t type=item["Type"].as_i64(-1);const uint64_t id=item["TableId"].as_u64();
+        if(type==2){if(id>=8)return fail("currency TableId must be in [0,7]");}
+        else if(!id)return fail("non-currency inventory TableId must be positive");
+        if(type<0)return fail("inventory Type must be non-negative");
         int64_t count=item["Count"].as_i64(-1);if(count<0)return fail("inventory Count must be non-negative");
     }
     return true;
 }
 bool Backend::load_store(){
-    auto try_load=[&](const std::string &path)->bool{
-        std::string text;if(!read_file(path,text,16*1024*1024))return false;
-        try{J loaded=json::parse(text);if(!loaded.is_object())return false;J previous=state_;state_=std::move(loaded);if(normalize_state())return true;state_=std::move(previous);return false;}catch(...){return false;}
+    last_store_recovery_="none";save_data_present_but_unusable_=false;
+    auto exists=[](const std::string &path){return access(path.c_str(),F_OK)==0;};
+    auto parse_file=[](const std::string &path,J &out)->bool{std::string text;if(!read_file(path,text,16*1024*1024))return false;try{out=json::parse(text);return out.is_object();}catch(...){return false;}};
+    auto try_backend=[&](const std::string &path)->bool{
+        J loaded;if(!parse_file(path,loaded)||loaded.contains("schema_version"))return false;
+        J previous=state_;state_=std::move(loaded);
+        if(normalize_state())return true;
+        state_=std::move(previous);return false;
     };
-    last_store_recovery_="none";
-    if(try_load(save_path_)){last_store_recovery_="primary";return true;}
-    const std::string invalid=save_path_+".invalid";
-    if(access(save_path_.c_str(),F_OK)==0){unlink(invalid.c_str());rename(save_path_.c_str(),invalid.c_str());}
+    auto archive_primary=[&]()->bool{
+        if(!exists(save_path_))return true;
+        std::string archive=save_path_+".invalid";
+        if(exists(archive))archive+="."+std::to_string(now_sec());
+        if(rename(save_path_.c_str(),archive.c_str())!=0){ASTRAE_LOGE("cannot preserve invalid primary save %s: errno=%d (%s)",save_path_.c_str(),errno,std::strerror(errno));return false;}
+        ASTRAE_LOGW("preserved unreadable primary save as %s",archive.c_str());return true;
+    };
+    // Detect the placeholder v3 profile created by the earlier broken bootstrap.
+    // If a valid schema-v1 compat profile exists, it is the real historical save and
+    // must replace that empty placeholder once. Meaningful native progress always wins.
+    auto is_placeholder=[](const J &candidate)->bool {
+        // Only the exact untouched seed emitted by the old broken bootstrap may be
+        // replaced by a historical compat save. Any player-visible customization
+        // (name, character, formation, lobby selection, tutorial, inventory, etc.)
+        // makes this a real native save and therefore gives it priority.
+        if(!candidate.is_object()||candidate["LegacySaveImported"].as_bool())return false;
+        const J &account=candidate["Account"],&tutorial=candidate["TutorialInfo"];
+        if(!account.is_object()||!tutorial.is_object())return false;
+        if(account["UserName"].as_string()!="Offline Player"||account["NickName"].as_string("Offline Player")!="Offline Player")return false;
+        if(!account["GameAccountId"].as_string().empty()||account["ServerId"].as_u64(1)!=1||account["Level"].as_i64(1)!=1||account["Exp"].as_i64()!=0)return false;
+        if(tutorial["ContentBits"].as_u64()!=0||tutorial["InitialIndex"].as_i64()!=0)return false;
+        for(const char *key:{"inventory","vignettes","artifacts","mails","tickets","costumes","rune_stock","ReceiptInfos","GachaAdjustPointInfos","RuneGrantInfos","ClaimedMailIds","ClaimedGuideMissionTaskIds","ClaimedFavorRewardIds","Installations","DateFieldNodeInfos","FavorInfos","DateFieldNodeEventInfos","ScenarioPackMiniInfos","ScenarioPackDetailInfos","ShopItemInfos"})if(!candidate[key].is_array()||candidate[key].size()!=0)return false;
+        if(!candidate["quests"].is_object()||!candidate["quests"].as_object().empty())return false;
+        if(!candidate["gacha_state"].is_object()||!candidate["gacha_state"].as_object().empty())return false;
+        if(!candidate["DailyState"].is_object()||!candidate["DailyState"].as_object().empty())return false;
+        if(!candidate["GuideState"].is_object()||!candidate["GuideState"].as_object().empty())return false;
+        if(!candidate["PackState"].is_object())return false;
+        if(!candidate["PackState"].as_object().empty()&&(!candidate["PackState"]["Packs"].is_object()||!candidate["PackState"]["Packs"].as_object().empty()))return false;
+        const J &characters=candidate["characters"];
+        if(!characters.is_array()||characters.size()!=1)return false;
+        const J &c=characters[0];
+        if(c["TableId"].as_u64()!=10001||c["ServerId"].as_u64()!=100000||c["Level"].as_i64(1)!=1||c["Exp"].as_i64()!=0||c["Star"].as_i64()!=0||c["Potential"].as_u64()!=0||c["Favorite"].as_bool()||c["Locked"].as_bool()||c["Signed"].as_bool())return false;
+        for(const char *key:{"Buffs","Runes"})if(!c[key].is_array()||c[key].size()!=0)return false;
+        if(!c["Skills"].is_array()||c["Skills"].size()!=8)return false;
+        for(const auto &skill:c["Skills"].as_array())if(skill["Level"].as_i64(1)!=1)return false;
+        if(candidate["LobbyCharacterId"].as_u64()!=10001||candidate["LobbyBackgroundId"].as_u64()!=30001)return false;
+        const J &lobby=candidate["LobbyCharacterInfo"];
+        auto one_id=[](const J &value,uint64_t id){return value.is_array()&&value.size()==1&&value[0].as_u64()==id;};
+        if(!lobby.is_object()||!one_id(lobby["TableIds_Day"],10001)||!one_id(lobby["TableIds_Night"],10001))return false;
+        const J &formations=candidate["formations"];
+        if(!formations.is_array()||formations.size()!=1)return false;
+        const J &formation=formations[0];
+        if(formation["Index"].as_i64(-1)!=0||formation["Name"].as_string()!="Formation 1"||!one_id(formation["CharacterTableIds"],10001)||!formation["VignetteTableIds"].is_array()||formation["VignetteTableIds"].size()!=0)return false;
+        if(candidate["Progress"].is_object()&&candidate["Progress"]["UnlockInfos"].is_array()&&candidate["Progress"]["UnlockInfos"].size()!=0)return false;
+        return true;
+    };
+    bool placeholder_primary=false;
+    if(exists(save_path_)){
+        save_data_present_but_unusable_=true;J native;
+        if(parse_file(save_path_,native)&&!native.contains("schema_version")){
+            J previous=state_;state_=native;const bool native_valid=normalize_state();if(!native_valid)state_=std::move(previous);else placeholder_primary=is_placeholder(state_);
+        }
+    }
+    bool compat_candidate_found=false;
+    auto try_compat_migration=[&]()->bool {
+        const std::string compat_dir=join_path(save_dir_,"compat-store");
+        const std::string candidates[]={join_path(compat_dir,"save.json"),join_path(compat_dir,"save.json.bak"),join_path(compat_dir,"save.json.tmp")};
+        for(const auto &path:candidates){
+            if(!exists(path))continue;
+            J legacy;if(!parse_file(path,legacy)){compat_candidate_found=true;save_data_present_but_unusable_=true;continue;}
+            if(save_migration::is_pristine_new_profile(legacy)){ASTRAE_LOGI("compat Store contains only the untouched new_local_profile seed; no historical save to import: %s",path.c_str());continue;}
+            compat_candidate_found=true;save_data_present_but_unusable_=true;
+            J migrated;std::string migration_error;
+            if(!save_migration::migrate_compat_document(legacy,migrated,&migration_error)){ASTRAE_LOGW("legacy save candidate rejected without modification: path=%s reason=%s",path.c_str(),migration_error.c_str());continue;}
+            migrated["LegacySaveSource"]=path;J previous=state_;state_=std::move(migrated);
+            if(!normalize_state()){state_=std::move(previous);ASTRAE_LOGE("legacy save migration produced invalid native state; original retained: %s",path.c_str());continue;}
+            if(placeholder_primary){std::string archive=save_path_+".placeholder";if(exists(archive))archive+="."+std::to_string(now_sec());if(rename(save_path_.c_str(),archive.c_str())!=0){ASTRAE_LOGE("cannot archive old placeholder save %s: errno=%d (%s)",save_path_.c_str(),errno,std::strerror(errno));state_=std::move(previous);return false;}ASTRAE_LOGW("archived previous synthetic placeholder profile as %s before importing historical compat save",archive.c_str());}
+            else if(!archive_primary()){state_=std::move(previous);return false;}
+            if(!commit_store()){ASTRAE_LOGE("legacy save mapped but native commit failed; source retained at %s",path.c_str());state_=std::move(previous);return false;}
+            last_store_recovery_=placeholder_primary?"compat-store-imported-over-placeholder":"compat-store-migrated";save_data_present_but_unusable_=false;
+            ASTRAE_LOGI("legacy compatibility save migrated: source=%s characters=%zu inventory=%zu tutorial_bits=%llu initial_index=%lld; original compat file retained",path.c_str(),state_["characters"].size(),state_["inventory"].size(),static_cast<unsigned long long>(state_["TutorialInfo"]["ContentBits"].as_u64()),static_cast<long long>(state_["TutorialInfo"]["InitialIndex"].as_i64()));return true;
+        }
+        return false;
+    };
+    // Native v3 always wins unless it is the exact empty seed emitted by an older
+    // bootstrap. In that one case import the real v1 compat save before accepting it.
+    if(placeholder_primary&&try_compat_migration())return true;
+    if(placeholder_primary&&compat_candidate_found){last_store_recovery_="compat-save-invalid-retained";save_data_present_but_unusable_=true;ASTRAE_LOGE("a historical compatibility save exists but cannot be imported; refusing to fall back to the previous placeholder profile");return false;}
+    if(exists(save_path_)){save_data_present_but_unusable_=true;if(try_backend(save_path_)){last_store_recovery_="primary";save_data_present_but_unusable_=false;ASTRAE_LOGI("loaded existing native save: %s",save_path_.c_str());return true;}}
     const std::string backup=save_path_+".bak";
-    if(try_load(backup)){
-        last_store_recovery_="backup";
-        if(!commit_store())last_store_recovery_="backup-loaded-not-rewritten";
+    if(exists(backup)){save_data_present_but_unusable_=true;if(try_backend(backup)){
+        if(!archive_primary())return false;
+        last_store_recovery_="backup-recovered";save_data_present_but_unusable_=false;
+        if(!commit_store())ASTRAE_LOGW("loaded backup save but could not rewrite primary; backup remains intact");
+        ASTRAE_LOGI("recovered existing native save from %s",backup.c_str());return true;
+    }}
+    const std::string temp=save_path_+".tmp";
+    if(exists(temp)){save_data_present_but_unusable_=true;if(try_backend(temp)){
+        if(!archive_primary())return false;
+        last_store_recovery_="temporary-recovered";save_data_present_but_unusable_=false;
+        if(!commit_store())ASTRAE_LOGW("loaded interrupted temporary save but could not rewrite primary");
+        ASTRAE_LOGI("recovered native save from interrupted transaction %s",temp.c_str());return true;
+    }}
+    // Phase-1/compatibility Store schema v1 lives in SinglePlayer/compat-store/save.json.
+    // It contains the real old account and tutorial state; the previous Backend loader
+    // never looked there and consequently seeded a fresh account on each install/run.
+    const std::string compat_dir=join_path(save_dir_,"compat-store");
+    const std::string candidates[]={save_path_,save_path_+".bak",save_path_+".tmp",save_path_+".invalid",join_path(compat_dir,"save.json"),join_path(compat_dir,"save.json.bak"),join_path(compat_dir,"save.json.tmp")};
+    for(const auto &path:candidates){
+        if(!exists(path))continue;
+        J legacy;if(!parse_file(path,legacy)){save_data_present_but_unusable_=true;continue;}
+        if(save_migration::is_pristine_new_profile(legacy)){ASTRAE_LOGI("ignored blank compat Store seed during migration scan: %s",path.c_str());continue;}
+        save_data_present_but_unusable_=true;
+        J migrated;std::string migration_error;
+        if(!save_migration::migrate_compat_document(legacy,migrated,&migration_error)){
+            ASTRAE_LOGW("legacy save candidate rejected without modification: path=%s reason=%s",path.c_str(),migration_error.c_str());continue;
+        }
+        migrated["LegacySaveSource"]=path;
+        J previous=state_;state_=std::move(migrated);
+        if(!normalize_state()){state_=std::move(previous);ASTRAE_LOGE("legacy save migration produced invalid native state; original retained: %s",path.c_str());continue;}
+        if(path==save_path_&&!archive_primary()){state_=std::move(previous);return false;}
+        // If the native primary exists but was invalid, preserve it before writing the
+        // migrated save. Never rename it over an existing valid backup.
+        if(path!=save_path_&&!archive_primary()){state_=std::move(previous);return false;}
+        if(!commit_store()){ASTRAE_LOGE("legacy save was mapped but native commit failed; source retained at %s",path.c_str());state_=std::move(previous);return false;}
+        last_store_recovery_="compat-store-migrated";save_data_present_but_unusable_=false;
+        ASTRAE_LOGI("legacy compatibility save migrated successfully: source=%s characters=%zu inventory=%zu tutorial_bits=%llu initial_index=%lld; source snapshot retained",path.c_str(),state_["characters"].size(),state_["inventory"].size(),static_cast<unsigned long long>(state_["TutorialInfo"]["ContentBits"].as_u64()),static_cast<long long>(state_["TutorialInfo"]["InitialIndex"].as_i64()));
         return true;
     }
-    if(access(backup.c_str(),F_OK)==0)last_store_recovery_="backup-invalid";
+    if(save_data_present_but_unusable_){last_store_recovery_="existing-save-invalid-retained";ASTRAE_LOGE("existing save files were found but none could be loaded or migrated; refusing to overwrite them with a new account");}
     return false;
 }
 bool Backend::commit_store(){
@@ -227,12 +343,12 @@ J Backend::response_base(const std::string &name) const {J r=schema_default(name
 J &Backend::arr(const std::string &key){return ensure_arr(state_,key);}J &Backend::obj(const std::string &key){return ensure_obj(state_,key);}
 J *Backend::find_id(J &list,const std::string &field,uint64_t id){for(auto &x:list.as_array())if(id_equal(x[field],id))return &x;return nullptr;}
 const J *Backend::table_row(const std::string &table,const std::string &id_field,uint64_t id) const {auto it=tables_.find(table);if(it==tables_.end())return nullptr;for(const auto &r:it->second.as_array())if(id_equal(r[id_field],id))return &r;return nullptr;}
-std::vector<J> Backend::rewards_from(const J &req,const std::string &operation) const {std::vector<J> out;const J *src=nullptr;if(req["Rewards"].is_array())src=&req["Rewards"];else if(req["RewardInfos"].is_array())src=&req["RewardInfos"];else if(req["RewardParcelInfos"].is_array())src=&req["RewardParcelInfos"];if(src)for(const auto &v:src->as_array()){J r=j_obj();r["Type"]=i64(v,"Type",i64(v,"ParcelType",0));r["TableId"]=u64(v,"TableId",u64(v,"Id",0));r["Count"]=i64(v,"Count",i64(v,"Amount",1));if(r["TableId"].as_u64()&&r["Count"].as_i64()>0)out.push_back(r);}const J &configured=rules_["operations"][operation]["rewards"];if(out.empty()&&configured.is_array())for(const auto &v:configured.as_array()){J r=v;if(!r.contains("Count"))r["Count"]=1;out.push_back(r);}return out;}
+std::vector<J> Backend::rewards_from(const J &req,const std::string &operation) const {std::vector<J> out;const J *src=nullptr;if(req["Rewards"].is_array())src=&req["Rewards"];else if(req["RewardInfos"].is_array())src=&req["RewardInfos"];else if(req["RewardParcelInfos"].is_array())src=&req["RewardParcelInfos"];if(src)for(const auto &v:src->as_array()){J r=j_obj();r["Type"]=i64(v,"Type",i64(v,"ParcelType",0));r["TableId"]=u64(v,"TableId",u64(v,"Id",0));r["Count"]=i64(v,"Count",i64(v,"Amount",1));if((r["TableId"].as_u64()!=0||r["Type"].as_i64()==2)&&r["Count"].as_i64()>0)out.push_back(r);}const J &configured=rules_["operations"][operation]["rewards"];if(out.empty()&&configured.is_array())for(const auto &v:configured.as_array()){J r=v;if(!r.contains("Count"))r["Count"]=1;out.push_back(r);}return out;}
 bool Backend::grant(const J &reward,J *changed){
     const int type=int(i64(reward,"Type",i64(reward,"ParcelType",0)));
     const uint64_t id=u64(reward,"TableId",u64(reward,"Id",0));
     const int64_t n=i64(reward,"Count",i64(reward,"Amount",0));
-    if(!id||n<=0||n>INT32_MAX)return false;
+    if((!id&&type!=2)||n<=0||n>INT32_MAX)return false;
     auto record=[&](int64_t amount){if(changed)changed->push_back(make_reward(type,id,amount));};
     if(type==3||(type==10&&id==1)){
         J &account=state_["Account"];int64_t oldLevel=i64(account,"Level",1),oldExp=i64(account,"Exp",0);
@@ -250,12 +366,12 @@ bool Backend::grant(const J &reward,J *changed){
     return false;
 }
 bool Backend::spend(const J &cost,J *changed){
-    const int type=int(i64(cost,"Type",i64(cost,"ParcelType",0)));const uint64_t id=u64(cost,"TableId",u64(cost,"Id",0));const int64_t n=i64(cost,"Count",i64(cost,"Amount",0));if(!id||n<=0||n>INT32_MAX)return false;
+    const int type=int(i64(cost,"Type",i64(cost,"ParcelType",0)));const uint64_t id=u64(cost,"TableId",u64(cost,"Id",0));const int64_t n=i64(cost,"Count",i64(cost,"Amount",0));if((!id&&type!=2)||n<=0||n>INT32_MAX)return false;
     if(type==2||type==5){if(type==2&&id>=8)return false;for(auto &x:arr("inventory").as_array())if(i64(x,"Type")==type&&u64(x,"TableId")==id){int64_t have=i64(x,"Count");if(have<n)return false;x["Count"]=have-n;if(changed)changed->push_back(make_reward(type,id,-n));return true;}return false;}
     if(type==7||type==11){const std::string key=type==7?"tickets":"rune_stock";if(type==11&&rune_stock_limit(id)<2)return false;for(auto &x:arr(key).as_array())if(u64(x,"TableId")==id){int64_t have=i64(x,"Count");if(have<n)return false;x["Count"]=have-n;if(changed)changed->push_back(make_reward(type,id,-n));return true;}return false;}
     return false;
 }
-bool Backend::spend_by_table_id(uint64_t id,int64_t n,J *changed){if(!id||n<=0)return false;J *entry=nullptr;for(auto &x:arr("inventory").as_array())if(u64(x,"TableId")==id){if(entry)return false;entry=&x;}if(!entry||i64(*entry,"Count")<n)return false;int type=int(i64(*entry,"Type"));(*entry)["Count"]=i64(*entry,"Count")-n;if(changed)changed->push_back(make_reward(type,id,-n));return true;}
+bool Backend::spend_by_table_id(uint64_t id,int64_t n,J *changed){if(n<=0)return false;J *entry=nullptr;for(auto &x:arr("inventory").as_array())if(u64(x,"TableId")==id){if(entry)return false;entry=&x;}if(!entry||i64(*entry,"Count")<n)return false;int type=int(i64(*entry,"Type"));(*entry)["Count"]=i64(*entry,"Count")-n;if(changed)changed->push_back(make_reward(type,id,-n));return true;}
 int64_t Backend::common_i64(const std::string &key,int64_t fallback) const {auto it=tables_.find("ConstCommon");if(it==tables_.end()||!it->second.is_array()||it->second.size()==0)return fallback;return i64(it->second[0],key.c_str(),fallback);}
 bool Backend::grant_batch(const std::vector<J> &rewards,J *changed){J before=state_,previous=changed?*changed:j_arr();for(const auto &r:rewards)if(!grant(r,changed)){state_=std::move(before);if(changed)*changed=std::move(previous);return false;}return true;}
 bool Backend::spend_batch(const std::vector<J> &costs,J *changed){J before=state_,previous=changed?*changed:j_arr();for(const auto &c:costs)if(!spend(c,changed)){state_=std::move(before);if(changed)*changed=std::move(previous);return false;}return true;}
@@ -552,7 +668,7 @@ std::string Backend::diagnostics_json(){
     bool ready=false;{std::lock_guard<std::mutex> guard(mutex_);ready=initialized_;}
     if(!ready&&!init("",""))return "{\"ready\":false,\"error\":\"init_failed\"}";
     std::lock_guard<std::mutex> lk(mutex_);
-    J out=j_obj();out["ready"]=initialized_;out["version"]="AstraeOfflineBackend-Reconstruction/1.0.0-phase2";out["saveDirectory"]=save_dir_;out["tableDirectory"]=table_dir_;out["schemaCount"]=uint64_t(schemas_.size());out["requestCount"]=uint64_t(request_names_.size());out["responseCount"]=uint64_t(response_names_.size());out["tableCount"]=uint64_t(tables_.size());out["tableRowCount"]=uint64_t(table_row_count_);J tableRows=j_obj();for(const auto &kv:tables_)tableRows[kv.first]=uint64_t(kv.second.size());out["tableRows"]=std::move(tableRows);out["storeRevision"]=u64(state_,"StoreRevision");out["schemaVersion"]=u64(state_,"SchemaVersion");out["storeRecovery"]=last_store_recovery_;J counts=j_obj();for(const auto &kv:protocol_routes_){uint64_t n=counts[kv.second].as_u64(0);counts[kv.second]=n+1;}out["routes"]=counts;out["mappedRequestCount"]=uint64_t(std::count_if(protocol_routes_.begin(),protocol_routes_.end(),[](const auto &kv){return kv.second!="unmapped";}));return json::dump(out,true);
+    J out=j_obj();out["ready"]=initialized_;out["version"]="AstraeOfflineBackend-Reconstruction/1.0.0-phase2";out["saveDirectory"]=save_dir_;out["tableDirectory"]=table_dir_;out["schemaCount"]=uint64_t(schemas_.size());out["requestCount"]=uint64_t(request_names_.size());out["responseCount"]=uint64_t(response_names_.size());out["tableCount"]=uint64_t(tables_.size());out["tableRowCount"]=uint64_t(table_row_count_);J tableRows=j_obj();for(const auto &kv:tables_)tableRows[kv.first]=uint64_t(kv.second.size());out["tableRows"]=std::move(tableRows);out["storeRevision"]=u64(state_,"StoreRevision");out["schemaVersion"]=u64(state_,"SchemaVersion");out["storeRecovery"]=last_store_recovery_;out["saveDataPresentButUnusable"]=save_data_present_but_unusable_;out["legacySaveImported"]=state_["LegacySaveImported"].as_bool(false);J counts=j_obj();for(const auto &kv:protocol_routes_){uint64_t n=counts[kv.second].as_u64(0);counts[kv.second]=n+1;}out["routes"]=counts;out["mappedRequestCount"]=uint64_t(std::count_if(protocol_routes_.begin(),protocol_routes_.end(),[](const auto &kv){return kv.second!="unmapped";}));return json::dump(out,true);
 }
 std::string Backend::protocol_catalog_json(){
     bool ready=false;{std::lock_guard<std::mutex> guard(mutex_);ready=initialized_;}

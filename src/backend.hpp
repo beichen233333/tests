@@ -30,6 +30,7 @@ private:
     std::vector<std::string> response_names_;
     size_t table_row_count_=0;
     std::string last_store_recovery_;
+    bool save_data_present_but_unusable_=false;
     std::mutex mutex_;
     bool load_tables();
     bool load_schemas();
