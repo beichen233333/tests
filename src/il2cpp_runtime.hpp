@@ -37,6 +37,7 @@ struct Api {
     void *(*class_get_method_from_name)(void *, const char *, int)=nullptr;
     const char *(*method_get_name)(void *)=nullptr;
     uint32_t (*method_get_param_count)(void *)=nullptr;
+    uint32_t (*method_get_flags)(void *,uint32_t *)=nullptr;
     void *(*runtime_invoke)(void *, void *, void **, void **)=nullptr;
     void *(*object_new)(void *)=nullptr;
     void *(*object_unbox)(void *)=nullptr;

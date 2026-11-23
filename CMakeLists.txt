@@ -77,6 +77,7 @@ set(ASTRAE_RUNTIME_SOURCES
     src/il2cpp_runtime.cpp
     src/managed_wire.cpp
     src/lobby_restore.cpp
+    src/character99_restore.cpp
     src/hook_runtime.cpp
 )
 set(ASTRAE_COMPAT_SOURCES

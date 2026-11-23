@@ -65,6 +65,7 @@ void Runtime::resolve_symbols(){
     ASTRAE_BIND(class_get_method_from_name,"il2cpp_class_get_method_from_name");
     ASTRAE_BIND(method_get_name,"il2cpp_method_get_name");
     ASTRAE_BIND(method_get_param_count,"il2cpp_method_get_param_count");
+    ASTRAE_BIND(method_get_flags,"il2cpp_method_get_flags");
     ASTRAE_BIND(runtime_invoke,"il2cpp_runtime_invoke");
     ASTRAE_BIND(object_new,"il2cpp_object_new");
     ASTRAE_BIND(object_unbox,"il2cpp_object_unbox");

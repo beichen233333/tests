@@ -9,6 +9,8 @@ namespace astrae::lobby {
 // Reconstructed from artifact_capacity_tables@0x24c2ec: sets Common+0xc8
 // SecureInt value to 9999, then verifies Common.get_Inventory_Artifact_Max_Slots().
 bool artifact_capacity_tables(void *data_manager,std::string *error=nullptr);
+// Rebuilds Character_LevelFactor and GrowthRecipe Managed roots using the verified XML FromXml pipeline.
+bool character99_tables(void *data_manager,std::string *error=nullptr);
 // Reconstructed from permanent_raid_tables@0x24e494 in the original ELF.
 // Applies the original 128-bit row field constant to every row in the
 // DataManager's permanent-raid table (original accepted count: 1..128).
@@ -45,9 +47,9 @@ enum class InitialLobbyAction : uint8_t { None=0, EnterLobby=1, PlayFirstDay=2 }
 bool run_initial_lobby_route(void *login_controller,void *data_manager,uint64_t content_bits,InitialLobbyAction *action,std::string *error=nullptr);
 // Same route using the reconstructed local Store API's content_bits value.
 bool run_initial_lobby_route_from_store(void *login_controller,void *data_manager,InitialLobbyAction *action,std::string *error=nullptr);
-// Fail-closed partial reconstruction of reference touch(controller, method): recovers and
-// validates DataManager/Account at controller offsets 0x10/0xb0, but suppresses lobby dispatch
-// until the complete ordered table/account/cache restoration sequence has been implemented.
-// This function borrows roots from the active Unity managed invocation and creates no GCHandles.
+// Ordered reconstruction of reference touch(controller, method): recovers DataManager/Account
+// at controller offsets 0x10/0xb0, applies each verified prelude helper idempotently, and
+// suppresses lobby dispatch at the first still-unimplemented mandatory step. Borrowed roots are
+// used only within the active Unity managed invocation; this function creates no GCHandles.
 bool touch_enter_lobby(void *login_controller,std::string *error=nullptr);
 }

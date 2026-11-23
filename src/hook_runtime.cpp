@@ -112,7 +112,9 @@ static void touch_replacement(void *controller,void *method){
     catch(const std::exception &exception){error=std::string("touch prelude exception: ")+exception.what();ASTRAE_LOGE("touch proxy exception: %s",exception.what());}
     catch(...){error="touch prelude raised an unknown exception";ASTRAE_LOGE("touch proxy unknown exception");}
     if(should_forward_original_touch(restored,g_local_request_installed.load(std::memory_order_acquire))){
-        ASTRAE_LOGW("Hook #3 fallback: custom prelude is incomplete (%s); forwarding this tap to the original game touch through ShadowHook previous-function chain; Hook #5 local request interception is active",error.c_str());
+        const uint64_t local_calls=g_calls[5].load(std::memory_order_acquire);
+        if(local_calls>0)ASTRAE_LOGW("Hook #3 fallback: custom prelude is incomplete (%s); forwarding tap to original touch; Hook #5 has observed %llu local_request callbacks (handled=%s)",error.c_str(),static_cast<unsigned long long>(local_calls),g_managed_request_seen.load(std::memory_order_acquire)?"yes":"no");
+        else ASTRAE_LOGW("Hook #3 fallback: custom prelude is incomplete (%s); forwarding tap to original touch; Hook #5 is installed but has NOT observed a local_request callback, so offline request interception is not yet proven",error.c_str());
         SHADOWHOOK_CALL_PREV(touch_replacement,controller,method);
     }else ASTRAE_LOGE("Hook #3 tap remains blocked because custom prelude is incomplete and Hook #5 is not installed; refusing to call the original online path: %s",error.c_str());
 }

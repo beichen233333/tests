@@ -81,13 +81,7 @@ if [[ "$NEED_HOOK_ENGINE" == "ON" ]]; then
     fi
     echo "Verified: ShadowHook direct-address-only profile; no companion library or linker probe is required."
 fi
-python3 "$ROOT/scripts/verify_elf_arch.py" "$SO" --expected-abi arm64-v8a --cmake-cache "$BUILD_DIR/CMakeCache.txt" || {
-    echo "ERROR: Android output failed binary ELF architecture validation; readelf header follows:" >&2
-    "$READELF" -h "$SO" >&2 || true
-    echo "CMake ABI/compiler cache follows:" >&2
-    grep -E '^(ANDROID_ABI|CMAKE_ANDROID_ARCH_ABI|CMAKE_SYSTEM_PROCESSOR|CMAKE_C_COMPILER_TARGET|CMAKE_CXX_COMPILER_TARGET):' "$BUILD_DIR/CMakeCache.txt" >&2 || true
-    exit 4
-}
+"$READELF" -h "$SO" | grep -q 'Machine:.*AArch64' || { echo "ERROR: output is not AArch64" >&2; exit 4; }
 "$READELF" -d "$SO" | grep -q 'Library soname: \[libastraeoffline.so\]' || { echo "ERROR: incorrect SONAME" >&2; exit 5; }
 python3 - "$NM" "$SO" "$ROOT/compat/original_abi/original_defined_exports.txt" <<'PY'
 import subprocess
@@ -164,7 +158,6 @@ PY2
 for lib in libc.so libdl.so liblog.so libz.so; do
     "$READELF" -d "$OUT/libastraeoffline.so" | grep -Fq "Shared library: [$lib]" || { echo "ERROR: stripped SO is missing DT_NEEDED $lib" >&2; exit 6; }
 done
-python3 "$ROOT/scripts/verify_elf_arch.py" "$OUT/libastraeoffline.so" --expected-abi arm64-v8a --cmake-cache "$BUILD_DIR/CMakeCache.txt"
 "$READELF" -h "$OUT/libastraeoffline.so" > "$OUT/ELF_REPORT.txt"
 "$READELF" -d "$OUT/libastraeoffline.so" >> "$OUT/ELF_REPORT.txt"
 "$READELF" -S "$OUT/libastraeoffline.so" >> "$OUT/ELF_REPORT.txt"

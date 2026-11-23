@@ -299,6 +299,8 @@ std::mutex g_character99_loader_metadata_mutex;
 std::unordered_set<std::string> g_character99_loader_metadata_emitted;
 std::atomic<bool> g_character99_loader_metadata_complete{false};
 std::atomic<bool> g_artifact_capacity_applied{false};
+std::atomic<bool> g_permanent_raid_tables_applied{false};
+std::atomic<bool> g_battle_multiple_tables_applied{false};
 std::atomic_flag g_touch_lobby_running=ATOMIC_FLAG_INIT;
 
 std::string managed_class_full_name(const il2cpp::Api &api,void *object){
@@ -428,15 +430,28 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
         g_artifact_capacity_applied.store(true,std::memory_order_release);
         ASTRAE_LOGI("reference touch step 1/15 completed: artifact_capacity_tables");
     }
-    // Do not infer success from a helper existing in this project: the original invokes
-    // these operations in a strict order and checks each result before dispatch. The
-    // account bootstrap also contains many nested restorers, listed individually below.
-    constexpr const char *implemented_not_integrated="permanent_raid_tables, battle_multiple_tables, office_wire_probe, installation_native_tables";
-    constexpr const char *missing="character99_tables, seed_ticket_defaults/seed_table_defaults, permanent_raid_tables(integration pending), battle_multiple_tables(integration pending), custom_resource_tables, custom_item_tables, signed_exchange_tables, earned_unlocks/sync_unlocks, bootstrap(account){restore_balances,restore_foundation,pack_objects_cache,local_mail_count,restore_gacha,restore_farming_cache,restore_raid_cache,date_restore,installation_restore,guide_restore_cache,restore_daily_cache,restore_pack_missions,restore_puzzles}, local_account_event_login, guide_restore_cache(account,true)/initialize_guide_cache";
-    if(error)*error=std::string("reference touch initialization is incomplete; custom offline dispatcher is not ready; missing: ")+missing;
-    ASTRAE_LOGE("custom offline dispatcher not ready; touch_replacement must follow its configured fallback policy; missing required restorations: %s",missing);
-    ASTRAE_LOGW("already reconstructed but not yet integrated into the verified touch sequence: %s",implemented_not_integrated);
-    ASTRAE_LOGI("recovered live Managed roots are valid: DataManager=%p Account=%p; no EnterLobby/PlayFirstDay call was made",data_manager,account);
+    if(!character99_tables(data_manager,&helper_error)){if(error)*error="reference touch step 2/15 character99_tables failed: "+helper_error;ASTRAE_LOGE("reference touch step 2/15 character99_tables failed: %s",helper_error.c_str());return false;}
+    ASTRAE_LOGI("reference touch step 2/15 completed: character99_tables");
+    if(!g_permanent_raid_tables_applied.load(std::memory_order_acquire)){
+        if(!apply_permanent_raid_tables(data_manager,&helper_error)){if(error)*error="reference touch step 3/15 permanent_raid_tables failed: "+helper_error;ASTRAE_LOGE("reference touch step 3/15 permanent_raid_tables failed: %s",helper_error.c_str());return false;}
+        g_permanent_raid_tables_applied.store(true,std::memory_order_release);
+        ASTRAE_LOGI("reference touch step 3/15 completed: permanent_raid_tables");
+    }
+    // Reference touch calls seed_table_defaults at step 4, but its false return is explicitly
+    // non-fatal: the original branches to the log block and continues to battle_multiple_tables.
+    // The seed helper itself is still not reconstructed, so report the omission honestly and
+    // preserve the reference control-flow instead of incorrectly stopping before step 5.
+    ASTRAE_LOGW("reference touch step 4/15 seed_table_defaults not reconstructed; reference false-return path is non-fatal, continuing without claiming seed defaults were applied");
+    if(!g_battle_multiple_tables_applied.load(std::memory_order_acquire)){
+        if(!battle_multiple_tables(data_manager,&helper_error)){if(error)*error="reference touch step 5/15 battle_multiple_tables failed: "+helper_error;ASTRAE_LOGE("reference touch step 5/15 battle_multiple_tables failed: %s",helper_error.c_str());return false;}
+        g_battle_multiple_tables_applied.store(true,std::memory_order_release);
+        ASTRAE_LOGI("reference touch step 5/15 completed: battle_multiple_tables");
+    }
+    // custom_resource_tables is the next mandatory gate in the original touch function.
+    constexpr const char *missing="custom_resource_tables, custom_item_tables, signed_exchange_tables, earned_unlocks/sync_unlocks, bootstrap(account){restore_balances,restore_foundation,pack_objects_cache,local_mail_count,restore_gacha,restore_farming_cache,restore_raid_cache,date_restore,installation_restore,guide_restore_cache,restore_daily_cache,restore_pack_missions,restore_puzzles}, local_account_event_login, guide_restore_cache(account,true)/initialize_guide_cache, office_wire_probe, installation_native_tables";
+    if(error)*error=std::string("reference touch sequence stopped safely at step 6/15; missing: ")+missing;
+    ASTRAE_LOGE("custom offline dispatcher not ready; reference touch sequence stopped at step 6/15: %s",missing);
+    ASTRAE_LOGI("completed reference steps: artifact_capacity_tables, character99_tables, permanent_raid_tables, battle_multiple_tables; seed_table_defaults remains omitted on its documented non-fatal path; DataManager=%p Account=%p",data_manager,account);
     return false;
 }
 
