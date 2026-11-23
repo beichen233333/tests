@@ -1,4 +1,6 @@
 #include "lobby_restore.hpp"
+#include "custom_resource_repair.hpp"
+#include "custom_item_tables.hpp"
 #include "character99_object_graph.hpp"
 #include "il2cpp_runtime.hpp"
 #include "managed_wire.hpp"
@@ -301,6 +303,10 @@ std::atomic<bool> g_character99_loader_metadata_complete{false};
 std::atomic<bool> g_artifact_capacity_applied{false};
 std::atomic<bool> g_permanent_raid_tables_applied{false};
 std::atomic<bool> g_battle_multiple_tables_applied{false};
+std::atomic<bool> g_vignette_icon_fallbacks_applied{false};
+std::atomic<bool> g_challenge_gate_tables_applied{false};
+std::atomic<bool> g_permanent_story_pack_tables_applied{false};
+std::atomic<bool> g_sigrid_mastery_tables_applied{false};
 std::atomic_flag g_touch_lobby_running=ATOMIC_FLAG_INIT;
 
 std::string managed_class_full_name(const il2cpp::Api &api,void *object){
@@ -447,11 +453,27 @@ bool touch_enter_lobby(void *login_controller,std::string *error){
         g_battle_multiple_tables_applied.store(true,std::memory_order_release);
         ASTRAE_LOGI("reference touch step 5/15 completed: battle_multiple_tables");
     }
-    // custom_resource_tables is the next mandatory gate in the original touch function.
-    constexpr const char *missing="custom_resource_tables, custom_item_tables, signed_exchange_tables, earned_unlocks/sync_unlocks, bootstrap(account){restore_balances,restore_foundation,pack_objects_cache,local_mail_count,restore_gacha,restore_farming_cache,restore_raid_cache,date_restore,installation_restore,guide_restore_cache,restore_daily_cache,restore_pack_missions,restore_puzzles}, local_account_event_login, guide_restore_cache(account,true)/initialize_guide_cache, office_wire_probe, installation_native_tables";
-    if(error)*error=std::string("reference touch sequence stopped safely at step 6/15; missing: ")+missing;
-    ASTRAE_LOGE("custom offline dispatcher not ready; reference touch sequence stopped at step 6/15: %s",missing);
-    ASTRAE_LOGI("completed reference steps: artifact_capacity_tables, character99_tables, permanent_raid_tables, battle_multiple_tables; seed_table_defaults remains omitted on its documented non-fatal path; DataManager=%p Account=%p",data_manager,account);
+    // custom_resource_tables is one mandatory outer gate. Keep its recovered substeps
+    // independently idempotent so a later failed substep does not repeat earlier mutations.
+    if(!g_vignette_icon_fallbacks_applied.load(std::memory_order_acquire)){
+        if(!repair_vignette_icon_fallbacks(data_manager,&helper_error)){if(error)*error="reference touch step 6/15 custom_resource_tables.vignette_icon_fallbacks failed: "+helper_error;ASTRAE_LOGE("reference touch step 6/15 vignette_icon_fallbacks failed: %s",helper_error.c_str());return false;}
+        g_vignette_icon_fallbacks_applied.store(true,std::memory_order_release);
+        ASTRAE_LOGI("reference touch step 6/15 custom_resource_tables substep completed: vignette_icon_fallbacks=32");
+    }
+    bool challenge_ok=g_challenge_gate_tables_applied.load(std::memory_order_acquire);bool story_ok=g_permanent_story_pack_tables_applied.load(std::memory_order_acquire);bool sigrid_ok=g_sigrid_mastery_tables_applied.load(std::memory_order_acquire);
+    std::string challenge_error,story_error,sigrid_error;
+    if(!challenge_ok){challenge_ok=challenge_gate_tables(data_manager,&challenge_error);if(challenge_ok){g_challenge_gate_tables_applied.store(true,std::memory_order_release);ASTRAE_LOGI("reference touch step 6/15 custom_resource_tables substep completed: challenge_gate_tables");}else ASTRAE_LOGE("reference touch step 6/15 challenge_gate_tables failed: %s",challenge_error.c_str());}
+    if(!story_ok){story_ok=permanent_story_pack_tables(data_manager,&story_error);if(story_ok){g_permanent_story_pack_tables_applied.store(true,std::memory_order_release);ASTRAE_LOGI("reference touch step 6/15 custom_resource_tables substep completed: permanent_story_pack_tables");}else ASTRAE_LOGE("reference touch step 6/15 permanent_story_pack_tables failed: %s",story_error.c_str());}
+    if(!sigrid_ok){sigrid_ok=sigrid_mastery_tables(data_manager,&sigrid_error);if(sigrid_ok){g_sigrid_mastery_tables_applied.store(true,std::memory_order_release);ASTRAE_LOGI("reference touch step 6/15 custom_resource_tables substep completed: sigrid_mastery_tables");}else ASTRAE_LOGE("reference touch step 6/15 sigrid_mastery_tables failed: %s",sigrid_error.c_str());}
+    if(!challenge_ok||!story_ok||!sigrid_ok){std::string failures;if(!challenge_ok)failures+="challenge_gate_tables: "+challenge_error;if(!story_ok){if(!failures.empty())failures+="; ";failures+="permanent_story_pack_tables: "+story_error;}if(!sigrid_ok){if(!failures.empty())failures+="; ";failures+="sigrid_mastery_tables: "+sigrid_error;}if(error)*error="reference touch step 6/15 custom_resource_tables failed: "+failures;ASTRAE_LOGE("reference touch step 6/15 custom_resource_tables failed: %s",failures.c_str());return false;}
+    ASTRAE_LOGI("reference touch step 6/15 completed: custom_resource_tables");
+    std::string custom_item_probe_error;if(!inspect_custom_item_tables_runtime(data_manager,&custom_item_probe_error))ASTRAE_LOGW("custom_item_tables runtime schema audit incomplete; guarded constructor will revalidate required ABI: %s",custom_item_probe_error.c_str());
+    if(!restore_custom_item_tables_runtime(data_manager,&custom_item_probe_error)){if(error)*error="reference touch step 7/15 custom_item_tables Managed reconstruction failed: "+custom_item_probe_error;ASTRAE_LOGE("reference touch step 7/15 custom_item_tables reconstruction failed: %s",custom_item_probe_error.c_str());return false;}
+    ASTRAE_LOGI("reference touch step 7/15 custom_item_tables Managed rows and ItemUseSelectable.Request wire round trips completed; Gacha/Reward conversion probe remains pending");
+    constexpr const char *missing="custom_item_tables Gacha/Reward conversion parity, signed_exchange_tables and sync_unlocks runtime sequencing (standalone helpers reconstructed but not yet invoked before step 7 parity), bootstrap(account){restore_balances,restore_foundation,pack_objects_cache,local_mail_count runtime sequencing,restore_gacha,restore_farming_cache,restore_raid_cache,date_restore,installation_restore,guide_restore_cache,restore_daily_cache,restore_pack_missions,restore_puzzles}, local_account_event_login, guide_restore_cache(account,true)/initialize_guide_cache, office_wire_probe, installation_native_tables";
+    if(error)*error=std::string("reference touch sequence stopped safely after step 7/15 Managed Item/Reward table reconstruction; missing: ")+missing;
+    ASTRAE_LOGE("custom offline dispatcher not ready; reference touch sequence stopped after step 7/15 Managed Item/Reward table reconstruction: %s",missing);
+    ASTRAE_LOGI("completed reference steps: artifact_capacity_tables, character99_tables, permanent_raid_tables, battle_multiple_tables, custom_resource_tables, custom_item_tables Managed rows; seed_table_defaults remains omitted on its documented non-fatal path; DataManager=%p Account=%p",data_manager,account);
     return false;
 }
 

@@ -1,0 +1,4 @@
+#include "signed_exchange_tables.hpp"
+#include <cassert>
+#include <string>
+int main(){using namespace astrae::lobby;const auto &spec=signed_exchange_xml_spec();assert(spec.id==100);assert(spec.type==2);assert(spec.parcel_id==900010006ULL);assert(spec.packed_cost==0x000003e800000001ULL);assert(spec.trailing_flag==0);assert(std::string(spec.icon)=="UI/UIResources/03_Icon/Item/Icon_AdjustStore_RandomArtifact");assert(std::string(spec.name_localize)=="12969540579487863062");assert(std::string(spec.description_localize)=="1983076511861317074");std::string error;assert(!signed_exchange_should_insert(0,false,&error)&&!error.empty());assert(signed_exchange_should_insert(1,false,&error)&&error.empty());assert(signed_exchange_should_insert(4096,false,&error));assert(!signed_exchange_should_insert(4097,false,&error)&&!error.empty());assert(!signed_exchange_should_insert(1,true,&error)&&error.empty());return 0;}

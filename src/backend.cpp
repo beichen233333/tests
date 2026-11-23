@@ -664,6 +664,21 @@ int Backend::replace_state(const std::string &text){
     std::lock_guard<std::mutex> lk(mutex_);
     try{J next=json::parse(text);if(!next.is_object())return 0;J old=state_;state_=std::move(next);if(!normalize_state()){state_=std::move(old);return 0;}if(commit_store())return 1;state_=std::move(old);return 0;}catch(...){return 0;}
 }
+bool Backend::is_initialized(){std::lock_guard<std::mutex> lk(mutex_);return initialized_;}
+bool Backend::apply_account_unlocks(const J &unlocks){
+    std::lock_guard<std::mutex> lk(mutex_);if(!initialized_||!unlocks.is_array())return false;
+    J previous=state_;J &progress=state_["Progress"];if(!progress.is_object())progress=j_obj();progress["UnlockInfos"]=unlocks;
+    J &account=state_["Account"];if(!account.is_object()||!account["Level"].is_number()||!account["Exp"].is_number()){state_=std::move(previous);return false;}
+    int64_t level=account["Level"].as_i64(-1),exp=account["Exp"].as_i64(-1);if(level<1||level>99||exp<0||exp>INT32_MAX||account["Exp"].as_double(-1.0)!=static_cast<double>(exp)){state_=std::move(previous);return false;}
+    for(const auto &entry:unlocks.as_array()){
+        if(!entry.is_object()||!entry["TableId"].is_string()||entry["TableId"].as_string()!="200"||!entry["Value"].is_string())continue;
+        const std::string text=entry["Value"].as_string();char *end=nullptr;errno=0;long long value=std::strtoll(text.c_str(),&end,10);if(errno||end==text.c_str()||!end||*end!='\0'||value<10){state_=std::move(previous);return false;}
+    }
+    while(level<99&&exp>=kAccountLevelExp[static_cast<size_t>(level-1)]){exp-=kAccountLevelExp[static_cast<size_t>(level-1)];++level;}
+    account["Level"]=level;account["Exp"]=exp;
+    if(!commit_store()){state_=std::move(previous);return false;}
+    return true;
+}
 std::string Backend::diagnostics_json(){
     bool ready=false;{std::lock_guard<std::mutex> guard(mutex_);ready=initialized_;}
     if(!ready&&!init("",""))return "{\"ready\":false,\"error\":\"init_failed\"}";

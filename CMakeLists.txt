@@ -77,6 +77,14 @@ set(ASTRAE_RUNTIME_SOURCES
     src/il2cpp_runtime.cpp
     src/managed_wire.cpp
     src/lobby_restore.cpp
+    src/custom_resource_repair.cpp
+    src/custom_mail_catalog.cpp
+    src/custom_item_tables.cpp
+    src/gacha_reconstruction.cpp
+    src/signed_exchange_tables.cpp
+    src/unlock_sync.cpp
+    src/unlock_sync_runtime.cpp
+    src/local_mail_count.cpp
     src/character99_restore.cpp
     src/hook_runtime.cpp
 )
@@ -223,6 +231,34 @@ if(BUILD_TESTING AND NOT ANDROID)
     target_link_libraries(backend_legacy_save_integration_test PRIVATE Threads::Threads ${CMAKE_DL_LIBS} ZLIB::ZLIB)
     target_compile_options(backend_legacy_save_integration_test PRIVATE -UNDEBUG)
     add_test(NAME backend_legacy_save_integration COMMAND backend_legacy_save_integration_test)
+    add_executable(custom_resource_repair_test tests/custom_resource_repair_test.cpp $<TARGET_OBJECTS:astraeoffline_objects>)
+    target_include_directories(custom_resource_repair_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/compat/include)
+    target_link_libraries(custom_resource_repair_test PRIVATE Threads::Threads ${CMAKE_DL_LIBS} ZLIB::ZLIB)
+    target_compile_options(custom_resource_repair_test PRIVATE -UNDEBUG)
+    add_test(NAME custom_resource_repair COMMAND custom_resource_repair_test)
+    add_executable(custom_mail_asset_test tests/custom_mail_asset_test.cpp $<TARGET_OBJECTS:astraeoffline_objects>)
+    target_include_directories(custom_mail_asset_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/compat/include)
+    target_link_libraries(custom_mail_asset_test PRIVATE Threads::Threads ${CMAKE_DL_LIBS} ZLIB::ZLIB)
+    target_compile_options(custom_mail_asset_test PRIVATE -UNDEBUG)
+    add_test(NAME custom_mail_static_asset COMMAND custom_mail_asset_test)
+    add_executable(signed_exchange_tables_test tests/signed_exchange_tables_test.cpp src/signed_exchange_tables.cpp src/il2cpp_runtime.cpp src/debug_log.cpp)
+    target_include_directories(signed_exchange_tables_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/compat/include)
+    target_link_libraries(signed_exchange_tables_test PRIVATE Threads::Threads ${CMAKE_DL_LIBS})
+    target_compile_options(signed_exchange_tables_test PRIVATE -UNDEBUG)
+    add_test(NAME signed_exchange_tables COMMAND signed_exchange_tables_test)
+    add_executable(unlock_sync_test tests/unlock_sync_test.cpp src/unlock_sync.cpp src/json.cpp)
+    target_include_directories(unlock_sync_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_options(unlock_sync_test PRIVATE -UNDEBUG)
+    add_test(NAME earned_unlocks_reducer COMMAND unlock_sync_test)
+    add_executable(gacha_visual_test tests/gacha_visual_test.cpp src/gacha_reconstruction.cpp src/json.cpp)
+    target_include_directories(gacha_visual_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_options(gacha_visual_test PRIVATE -UNDEBUG)
+    add_test(NAME gacha_visual_payload COMMAND gacha_visual_test)
+    add_executable(local_mail_count_test tests/local_mail_count_test.cpp $<TARGET_OBJECTS:astraeoffline_objects>)
+    target_include_directories(local_mail_count_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/compat/include)
+    target_link_libraries(local_mail_count_test PRIVATE Threads::Threads ${CMAKE_DL_LIBS} ZLIB::ZLIB)
+    target_compile_options(local_mail_count_test PRIVATE -UNDEBUG)
+    add_test(NAME local_mail_count_predicate COMMAND local_mail_count_test)
 endif()
 
 add_library(astraeoffline SHARED $<TARGET_OBJECTS:astraeoffline_objects>)

@@ -1,31 +1,39 @@
 # Latest loading-screen log analysis
 
-Observed device build identity: `8c59286dcac5-f2d28a70cd4c6832` (2026-11-24 00:38 log).
+Observed device build identity: `4b8fe8d415dd-216374b60bb84369` (2026-11-24 01:03:14–01:03:40). This log predates the latest `custom_resource_tables` source integration; do not use it as device evidence for that rewritten helper.
 
 ## Confirmed runtime facts
 
-- IL2CPP initialized successfully (174 assemblies, 52 required exports resolved); ManagedWire loaded.
-- Compatibility Store was opened before Backend migration.
-- Backend imported the historical compatibility save over a recognized synthetic placeholder. It preserved the original compat file, archived the placeholder, restored 30 characters and 131 inventory entries, and preserved tutorial bits `725367` and initial index `11`. Diagnostics reported `legacySaveImported=true` and `storeRecovery=compat-store-imported-over-placeholder`.
-- Hook #5 and Hook #3 both installed successfully. Hook #3 was installed after Hook #5. No `Hook #5 local_request entered` line appears, so Hook #5 has not yet been proven to receive this login request.
-- On tap, Controller, DataManager and Account were recovered and validated. Artifact capacity step 1 completed.
-- Character99 step 2 was blocked by the prior build's safety policy before XML allocation; it did not crash in this log. The GrowthRecipe loader had a null Root, so step 2 must reconstruct it.
-- Hook #3 forwarded the tap to the original game `touch()` because the custom prelude was incomplete. The log therefore does not prove an offline login request/response cycle.
+- Runtime autostart, Hook #3 and Hook #5 were enabled in this device build.
+- IL2CPP initialized: 174 assemblies and 52 required exports resolved.
+- ManagedWire loaded successfully. Its schema report contained 359 types and 1471 fields.
+- Hook #5 `local_request` target fingerprint validated and direct replacement installed at RVA `0x2a5be04`.
+- Hook #3 `touch` target fingerprint validated and direct replacement installed after Hook #5 at RVA `0x5cdf7a4`.
+- A watchdog warning at 01:03:39.928 reported no Hook #3 callback during its first 15-second observation window; the first callback was logged at 01:03:39.993. This is a delayed observation, not a Hook install failure.
+- No `Hook #5 local_request entered` line appears anywhere in the supplied log. Hook #5 installation is confirmed, but request interception is not.
+- The Hook #3 callback recovered and validated the Controller, DataManager and Account. It used borrowed Managed roots from the active invocation rather than creating/releasing temporary GCHandles.
+- Artifact capacity step 1 completed: `Common+0xc8` SecureInt was set to 9999 and the getter returned 9999.
+- Character99 step 2 completed on device. The log records the LevelFactor FromXml invocation, merge from 720 to 880 rows using the 160-row extension, and GrowthRecipe FromXml invocation with 736 rows. The helper logged `reference character99_tables completed`.
+- Permanent Raid step 3 completed.
+- Seed step 4 was explicitly not reconstructed; the source log states the reference false-return branch is non-fatal and continues. This build skipped the helper and therefore did not reproduce any seed-helper side effects.
+- Battle Multiple step 5 completed.
+- The device binary then stopped before step 6 `custom_resource_tables`. The log lists it and later helpers as missing. That is consistent with an older build, not evidence that the current source step 6 failed.
+- Hook #3 fallback forwarded the tap to original game `touch()`. The log explicitly says Hook #5 has not observed a `local_request` callback.
 
-## Source fix following this log
+## Current source changes after this log
 
-- IL2CPP `runtime_invoke` reference parameters must receive the managed object pointer itself; the previous helper passed the address of the native pointer variable. Value types still receive the address of their native storage.
-- Character99 setters are now split into value/reference paths. Value setters validate IL2CPP value-type metadata and storage width. Reference setters validate reference-type metadata and compare the actual object class with the declared parameter class.
-- XML Root `DataList` assignment is verified by pointer equality, expected array length, array element class, and first/last row runtime classes before `FromXml` is called.
-- The previous compile-time FromXml block is removed. The new code writes a detailed invocation-start record only after the XML payload and method signature pass validation.
+- `custom_resource_tables@0x24ebf4` has since been rewritten from the reference disassembly and wired into touch step 6. It contains four recovered branches: Vignette fallback strings, Challenge Gate normalization, Story Pack expiry and Sigrid Mastery repair.
+- Added Host mock coverage for 32 managed string writes/GC write barriers, Challenge row invariants, DateTime fields, Sigrid matching, and the reference behavior that Story/Sigrid branches continue even if Challenge fails.
+- Added static Custom Mail data from the reference ELF: 22 descriptors, 715 choice rows and a 136-slot parcel resolver. The C++ read-only resolver now implements exact mapping behavior and has a Host test.
+- Current source now attempts step 7 `custom_item_tables` Managed Item/Item_Reward reconstruction after step 6. It can build 22 Item rows and 715 Item_Reward rows after runtime ABI preflight, but Gacha/Reward conversion parity and original binary Wire behavior remain incomplete; it still fails closed before `EnterLobby()` / `PlayFirstDay()`.
 
 ## Verification boundary
 
-The current Host build and all 9 CTest cases pass. The latest code has not yet been built with Android NDK or tested in the game process. A successful next device log should include:
+The current Host Release suite has 12 CTest cases and all pass. These tests validate only the implemented helper slices and mock object graphs. A new Android ARM64 build and device log are still required to verify `custom_resource_tables` in the actual game process. The next device run should include:
 
-1. `character99 XML payload validated before FromXml` for both roots.
-2. `character99 FromXml invocation starting with validated managed references`.
-3. `Character_LevelFactorRoot.FromXml` / `GrowthRecipeRoot.FromXml` return and post-call row/dictionary verification.
-4. A subsequent `Hook #5 local_request entered` when the game's login flow issues a locally handled request.
+1. `reference touch step 6/15 custom_resource_tables substep completed` for Vignette, Challenge, Story and Sigrid.
+2. `reference touch step 6/15 completed: custom_resource_tables`.
+3. The expected fail-closed message after step 7 Managed Item/Item_Reward reconstruction while Gacha/Reward conversion parity remains incomplete.
+4. Separate evidence of a real `Hook #5 local_request entered` callback and a mapped local Backend response.
 
-If FromXml still faults, the new invocation-start pointers and tombstone will isolate the failing root. Until Hook #5 receives and dispatches a request, and later mandatory touch-prelude steps (starting at `custom_resource_tables`) are restored, the full offline lobby is not yet complete.
+Do not treat Hook #5 installation as proof of request interception, Host tests as proof of Android memory-layout correctness, or this partial progress as a complete offline lobby.

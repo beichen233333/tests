@@ -1,0 +1,5 @@
+#include "local_mail_count.hpp"
+#include <cassert>
+#include <limits>
+using astrae::json::Value;
+int main(){using namespace astrae::lobby;int32_t count=-1;std::string error;Value store=Value::object();assert(count_local_mail_receipts(store,&count,&error)&&count==0);store["mails"]=Value::array();store["mails"].push_back(Value::object());store["mails"][0]["Receipt"]=0;Value a=Value::object();a["Receipt"]=1;store["mails"].push_back(a);Value b=Value::object();b["Receipt"]=2;store["mails"].push_back(b);Value c=Value::object();c["Receipt"]=3;store["mails"].push_back(c);Value d=Value::object();d["Receipt"]="2";store["mails"].push_back(d);Value e=Value::object();e["Receipt"]=1.9;store["mails"].push_back(e);Value f=Value::object();f["Receipt"]=2.9;store["mails"].push_back(f);store["mails"].push_back(Value("not an object"));assert(count_local_mail_receipts(store,&count,&error)&&count==3);store["mails"]=Value("invalid");assert(!count_local_mail_receipts(store,&count,&error)&&!error.empty());assert(!count_local_mail_receipts(store,nullptr,&error));store.erase("mails");assert(count_local_mail_receipts(store,&count,&error)&&count==0);return 0;}

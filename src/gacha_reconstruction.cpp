@@ -1,0 +1,7 @@
+#include "gacha_reconstruction.hpp"
+#include <limits>
+#include <string>
+namespace astrae::lobby {
+json::Value build_gacha_visual(int32_t type,uint64_t table_id,int32_t amount,bool is_new){json::Value out=json::Value::object();out["Type"]=type;out["TableId"]=std::to_string(table_id);out["AddedCount"]=std::to_string(amount);out["Count"]=std::to_string(amount);out["RewardFlag"]=is_new?64:0;out["ReplaceInfos"]=json::Value::array();return out;}
+bool merge_gacha_reward_entry(GachaRewardEntry *entries,size_t *count,size_t capacity,const GachaRewardEntry &incoming,std::string *error){if(error)error->clear();if(!entries||!count){if(error)*error="Gacha reward accumulator pointer is null";return false;}if(*count>capacity){if(error)*error="Gacha reward accumulator count exceeds capacity";return false;}if(incoming.count<=0){if(error)*error="Gacha reward increment must be positive";return false;}const uint32_t type=static_cast<uint32_t>(incoming.descriptor&0xffffffffULL);for(size_t i=0;i<*count;++i){auto &entry=entries[i];if(static_cast<uint32_t>(entry.descriptor&0xffffffffULL)!=type||entry.table_id!=incoming.table_id)continue;if(entry.count<0||entry.count>std::numeric_limits<int32_t>::max()-incoming.count){if(error)*error="Gacha reward count addition would overflow signed 32-bit range";return false;}entry.count+=incoming.count;return true;}if(*count>=capacity){if(error)*error="Gacha reward accumulator has no free slot for a new type/id pair";return false;}entries[*count]=incoming;++*count;return true;}
+}

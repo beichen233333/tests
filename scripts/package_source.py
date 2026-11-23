@@ -12,7 +12,7 @@ EXCLUDED_DIRS = {
     ".mypy_cache", ".cache", "useless", "third_party",
 }
 EXCLUDED_SUFFIXES = {".pyc", ".pyo", ".o", ".a", ".so", ".dylib", ".dll", ".class"}
-EXCLUDED_NAMES = {"Thumbs.db", ".DS_Store"}
+EXCLUDED_NAMES = {"Thumbs.db", ".DS_Store", "debug.log"}
 
 def should_skip(path: Path) -> bool:
     relative = path.relative_to(ROOT)

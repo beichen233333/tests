@@ -100,6 +100,12 @@ int main(){
     Value fresh_state=astrae::json::parse(backend.state_json());
     assert(!fresh_state["LegacySaveImported"].as_bool(false));
     assert(fresh_state["characters"].size()==1 && fresh_state["formations"].size()==1);
+    // sync_unlocks persists computed unlocks atomically and applies the original account EXP gate.
+    fresh_state["Account"]["Exp"]=int64_t(32);assert(backend.replace_state(astrae::json::dump(fresh_state))==1);
+    Value unlocks=Value::array(),unlock=Value::object();unlock["TableId"]="200";unlock["Value"]="99";unlocks.push_back(unlock);
+    assert(backend.apply_account_unlocks(unlocks));Value unlock_state=astrae::json::parse(backend.state_json());assert(unlock_state["Progress"]["UnlockInfos"].size()==1);assert(unlock_state["Account"]["Level"].as_i64()==2&&unlock_state["Account"]["Exp"].as_i64()==0);
+    Value invalid_unlocks=Value::array(),invalid_unlock=Value::object();invalid_unlock["TableId"]="200";invalid_unlock["Value"]="9";invalid_unlocks.push_back(invalid_unlock);
+    assert(!backend.apply_account_unlocks(invalid_unlocks));Value after_invalid=astrae::json::parse(backend.state_json());assert(after_invalid["Progress"]["UnlockInfos"][0]["Value"].as_string()=="99");assert(after_invalid["Account"]["Level"].as_i64()==2&&after_invalid["Account"]["Exp"].as_i64()==0);
     backend.shutdown();
 
     char bad_temp[]="/tmp/astrae-save-invalid-XXXXXX";char *bad_base=mkdtemp(bad_temp);assert(bad_base);

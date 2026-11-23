@@ -1,0 +1,22 @@
+#include "custom_mail_catalog.hpp"
+#include "embedded_assets.hpp"
+#include "json.hpp"
+#include <array>
+#include <cassert>
+#include <cstdint>
+#include <iostream>
+#include <set>
+#include <string>
+int main(){
+    std::string error;assert(astrae::lobby::ensure_custom_mail_catalog(&error)&&error.empty());assert(astrae::lobby::custom_mail_item_count()==22);assert(astrae::lobby::custom_mail_choice_count()==715);
+    std::string raw;assert(astrae::assets::read_embedded_asset("assets/tables/embedded_11_custom_mail.json",raw));const auto root=astrae::json::parse(raw);const auto &items=root["items"].as_array(),&choices=root["choices"].as_array(),&resolver=root["resolver"]["indexByOffset"].as_array();assert(items.size()==22&&choices.size()==715&&resolver.size()==136);
+    static constexpr uint64_t expected_ids[]={900010001,900010002,900010003,900010006,900010004,900010005,900010111,900010112,900010113,900010114,900010115,900010121,900010122,900010123,900010124,900010125,900010131,900010132,900010133,900010134,900010135,900010136};
+    static constexpr size_t expected_counts[]={18,42,32,18,1,302,7,7,7,7,7,21,20,21,22,21,31,30,31,32,31,7};
+    std::set<std::pair<uint64_t,uint64_t>> unique_choices;for(const auto &row:choices)assert(unique_choices.insert({row["item"].as_u64(),row["id"].as_u64()}).second);
+    for(size_t i=0;i<22;++i){assert(items[i]["parcelId"].as_u64()==expected_ids[i]);const auto *indexed=astrae::lobby::custom_mail_item_at(i);assert(indexed&&indexed->parcel_id==expected_ids[i]);const auto *item=astrae::lobby::resolve_custom_mail_item(expected_ids[i]);assert(item&&item->parcel_id==expected_ids[i]&&item->type==items[i]["type"].as_u64()&&item->name==items[i]["name"].as_string()&&item->description==items[i]["description"].as_string());const auto *item_choices=astrae::lobby::custom_mail_choices(expected_ids[i]);assert(item_choices&&item_choices->size()==expected_counts[i]);for(const auto &choice:*item_choices){assert(choice.item==expected_ids[i]);assert(choice.type==item->type);}}
+    static constexpr std::array<std::pair<size_t,size_t>,22> expected_offsets={{{0,0},{1,1},{2,2},{3,4},{4,5},{5,3},{110,6},{111,7},{112,8},{113,9},{114,10},{120,11},{121,12},{122,13},{123,14},{124,15},{130,16},{131,17},{132,18},{133,19},{134,20},{135,21}}};
+    std::array<int32_t,136> expected{};expected.fill(-1);for(const auto &entry:expected_offsets)expected[entry.first]=static_cast<int32_t>(entry.second);for(size_t offset=0;offset<resolver.size();++offset){const auto &stored=resolver[offset];const auto *resolved=astrae::lobby::resolve_custom_mail_item(900010001+offset);if(expected[offset]<0){assert(stored.is_null());assert(!resolved);}else{assert(!stored.is_null()&&stored.as_u64()==static_cast<uint64_t>(expected[offset]));assert(resolved&&resolved->parcel_id==900010001+offset);}}
+    std::string wire_raw;assert(astrae::assets::read_embedded_asset("assets/schema/wire_shapes.json",wire_raw));const auto wire=astrae::json::parse(wire_raw);const auto *request_shape=static_cast<const astrae::json::Value*>(nullptr),*select_shape=static_cast<const astrae::json::Value*>(nullptr);for(const auto &shape:wire.as_array()){if(shape["name"].as_string()=="ItemUseSelectable.Request")request_shape=&shape;else if(shape["name"].as_string()=="ItemSelectInfo")select_shape=&shape;}assert(request_shape&&select_shape);assert((*request_shape)["count"].as_u64()==3&&(*request_shape)["fields"].as_array().size()==3);assert((*request_shape)["fields"].as_array()[0]["name"].as_string()=="ItemId"&&(*request_shape)["fields"].as_array()[0]["offset"].as_u64()==16&&(*request_shape)["fields"].as_array()[0]["kind"].as_string()=="L");assert((*request_shape)["fields"].as_array()[1]["name"].as_string()=="Count"&&(*request_shape)["fields"].as_array()[1]["offset"].as_u64()==24);assert((*request_shape)["fields"].as_array()[2]["name"].as_string()=="ItemSelect"&&(*request_shape)["fields"].as_array()[2]["offset"].as_u64()==32);assert((*select_shape)["fields"].as_array().size()==2&&(*select_shape)["fields"].as_array()[0]["name"].as_string()=="Type"&&(*select_shape)["fields"].as_array()[1]["name"].as_string()=="TableId"&&(*select_shape)["fields"].as_array()[1]["kind"].as_string()=="L");
+    assert(!astrae::lobby::resolve_custom_mail_item(900010000));assert(!astrae::lobby::resolve_custom_mail_item(900010137));assert(!astrae::lobby::custom_mail_choices(900010137));
+    std::cout<<"custom mail catalog: exact 136-slot resolver, 22 descriptors, 715 choices and ItemUseSelectable.Request schema validated\n";return 0;
+}

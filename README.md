@@ -16,7 +16,7 @@ ShadowHook 官方手册也明确要求先初始化再调用 Hook API，并提示
 
 ## 当前运行状态（重要）
 
-当前版本**尚未实现完整大厅启动链，不是可正常游玩的完整单机版**。最新上传的设备日志 Build ID `f6b3be8929b7-a2f7eea92f87cbf9` 明确显示 `local_request_direct_hook=OFF`；同时旧版 Hook #3 direct-replacement 在初始化链未完成时直接返回，不调用原游戏 touch，因此登录动画不响应是该旧二进制的直接结果。当前源码已经改为 Android 标准构建先安装 Hook #5，再安装 Hook #3；自定义前置链未完成时，只有在 Hook #5 确认安装成功后，Hook #3 才通过 ShadowHook `SHADOWHOOK_CALL_PREV` 转发原游戏 touch。Hook #5 将请求送入本地 Backend，未映射请求返回本地 ErrorPacket，不会放行到原网络实现；但其业务覆盖仍不完整，不能宣称已完成离线单机。
+当前版本**尚未实现完整大厅启动链，不是可正常游玩的完整单机版**。最新提供的设备日志 Build ID `4b8fe8d415dd-216374b60bb84369`（2026-11-24 01:03:40）确认 Hook #5 与 Hook #3 均启用，Hook #5 安装成功，但没有观察到 `local_request entered`；因此不能证明请求已经经过本地 Backend。该日志确认 Artifact、Character99、Permanent Raid、Battle Multiple 已执行成功，但来自 custom-resource 重写接入前的构建，不能用于证明当前 `custom_resource_tables` 源码已在设备执行。当前源码保持 fail-closed：step 6 `custom_resource_tables` 已有 Host 级重写和测试；step 7 `custom_item_tables` 已接入 Managed Item/Item_Reward 行构造、运行时字段与 FromXml ABI 预检、DataList 合并及 21 组 `ItemUseSelectable.Request` Managed schema object round-trip。Gacha/Reward conversion 与原版二进制 Wire 行为仍未复刻，因此仍不会调用 `EnterLobby()` / `PlayFirstDay()`。Hook #3 在前置链未完成时，仅当 Hook #5 安装成功才通过 ShadowHook `SHADOWHOOK_CALL_PREV` 转发原游戏 touch；这是避免吞掉登录点击的回退，不等于离线大厅已完成。
 
 参考 ELF 中 `touch()` 的完整恢复顺序与依赖已记录在 `docs/REFERENCE_TOUCH_SEQUENCE.md`。`bootstrap(account)` 串联账户、余额、基金会、邮件、卡池、农场、Raid、日期、设施、Guide、每日任务、剧情包任务和谜题等多级恢复。只有这些步骤逐项移植并且每步的返回状态、Managed 对象和持久化结果均验证成功，才允许自研大厅 dispatcher 调用 `EnterLobby()` / `PlayFirstDay()`。
 
@@ -116,11 +116,11 @@ python3 scripts/generate_embedded_assets.py
 
 ## 当前功能边界
 
-Hook #3 已恢复参考 ELF 中 `touch(controller, method)` 使用的关键对象偏移：`DataManager=controller+0x10`、`Account=controller+0xb0`，并验证二者的 Managed 类型。预检路径只借用活动 Managed 调用的根引用，不创建/释放临时 GCHandle。上一版曾合成 first-day 完成标记；本版已删除这类强制跳过行为。当前源码按顺序执行：step 1 `artifact_capacity_tables`（设置 `Common+0xc8` 的 SecureInt 为 9999 并回读验证）；step 2 `character99_tables`（通过已确认的 XML 类型和 `FromXml` 构造 LevelFactor/GrowthRecipe Root，代码接入但尚待设备验证）；step 3 `permanent_raid_tables`；step 4 `seed_table_defaults` 尚未移植，参考 `touch` 对 false 返回走非致命分支；step 5 `battle_multiple_tables`；step 6 `custom_resource_tables` 仍未实现，因此当前仍 fail-closed，不调用 `EnterLobby()` / `PlayFirstDay()`。Hook #5 仍是部分请求路由；最新设备日志虽显示安装成功，却没有任何回调证据，因此不能称为已经接管网络。Hook 指纹只匹配对应游戏二进制版本；不匹配时会拒绝安装。Android ARM64 编译、目标设备加载与进入大厅必须在目标环境实测，主机编译不能证明真机稳定。
+Hook #3 已恢复 `touch(controller, method)` 的关键对象路径：`DataManager=controller+0x10`、`Account=controller+0xb0`，并验证 Managed 类型；预检只借用活动调用中的根对象，不跨线程保存临时引用。当前源码按序执行 step 1 Artifact、step 2 Character99、step 3 Permanent Raid、step 4 Seed（尚未实现；参考 false 返回是非致命的，但当前只显式跳过，seed 的副作用未复刻）、step 5 Battle Multiple、step 6 `custom_resource_tables`。Step 6 已重写 32 条 Vignette fallback、Challenge Gate、Story Pack expiry、Sigrid Mastery，并有 Host mock 回归；但最新设备日志早于该重写，故尚无设备执行证据。Step 7 `custom_item_tables` 已实现第一阶段 Managed DataSheet 重建：预检两个 Root 的实际数组元素类型、FromXml 参数/返回类、XML/Data 固定字段及 `ReplaceDataList` ABI；构造 22 条 Item 与 715 条 Item_Reward XML/Data 行，合并 DataList 并确认 DataDic 重建；另完成 21 组 `ItemUseSelectable.Request` Managed schema 对象 round-trip。该 round-trip 不是原版底层二进制 Wire 序列化；Gacha/Reward conversion parity 仍缺，因此 step 7 整体尚未完成，dispatcher 仍 fail-closed。静态来源为 ELF 恢复的 22 个 Custom Mail descriptor、715 条 choice 和 136 槽 ParcelId resolver。Hook #5 安装成功但没有本地请求 callback 的设备证据，不能称为已接管网络。Hook 指纹仅匹配对应游戏二进制版本；不匹配时拒绝安装。Android ARM64 编译、目标设备加载与进入大厅必须在目标环境实测，Host 构建不能证明真机稳定。
 
 ## SO 体积优化
 
-Android Release 构建对内嵌 JSON 使用 zlib level 9 压缩：当前 14 份 JSON 从 2,804,050 bytes 压缩到约 104,092 bytes（资源原始数据减少约 96.3%，实际最终 SO 体积仍以 NDK 报告为准）。发布脚本先从未剥离 ELF 单独保存 `libastraeoffline.so.debug`，再对设备运行库执行 `llvm-strip --strip-all`；动态导出表会在剥离前后分别对照 ABI manifest 校验。编译启用 `-Oz`、函数/数据分段、`--gc-sections`、安全 ICF 和可用时的 LTO。`SIZE_REPORT.txt` 会记录原始 ELF、部署 ELF 和独立调试符号文件的实际字节数。游戏里只部署 `libastraeoffline.so`；`.debug` 文件仅用于符号化 tombstone，不是运行时依赖。`libz.so` 是 Android 系统库，不是随包增加的第二个应用 SO。
+Android Release 构建对内嵌 JSON 使用 zlib level 9 压缩：当前 15 份 JSON 共 2,866,564 bytes，压缩后 107,689 bytes（资源数据减少约 96.24%，实际最终 SO 体积仍以 NDK 报告为准）。发布脚本先从未剥离 ELF 单独保存 `libastraeoffline.so.debug`，再对设备运行库执行 `llvm-strip --strip-all`；动态导出表会在剥离前后分别对照 ABI manifest 校验。编译启用 `-Oz`、函数/数据分段、`--gc-sections`、安全 ICF 和可用时的 LTO。`SIZE_REPORT.txt` 会记录原始 ELF、部署 ELF 和独立调试符号文件的实际字节数。游戏里只部署 `libastraeoffline.so`；`.debug` 文件仅用于符号化 tombstone，不是运行时依赖。`libz.so` 是 Android 系统库，不是随包增加的第二个应用 SO。
 
 ## 维护规则
 
@@ -145,18 +145,17 @@ The standard Android build script defaults to Runtime Autostart, Hook #5 local-r
 
 The log records constructor/build flags, IL2CPP load/domain readiness, resolved symbol counts, ManagedWire schema load, Backend and Store initialization, login controller and `EnterLobby` readiness, ShadowHook version, target RVA/fingerprint, install result, touch callback count, managed request/response outcomes and a 15-second Hook watchdog.
 
-## Character99 运行时元数据取证（当前阶段）
+## 当前阶段证据与测试
 
-第 1 阶段正在还原 Character99 和其余 touch 前置步骤。静态 factors/recipes 数据已由参考 ELF 的 DWARF 与重定位记录恢复并压缩嵌入；当前源码已新增 Managed XML `FromXml` 构建流程，验证 `FromXml` 参数/返回类型，并将 LevelFactor 与 GrowthRecipe Root 写回 DataManager Loader。该流程尚无新 Build ID 的设备运行证据，必须在实机确认 LevelFactor 总数 880、GrowthRecipe 总数 736 且两个 DataDic 非空后才能标记为真机完成。当前 touch 会在 `custom_resource_tables`（step 6）处 fail-closed，不调用大厅入口。
+用户设备日志 Build ID `4b8fe8d415dd-216374b60bb84369`（2026-11-24 01:03:40）确认 Character99 的 `Character_LevelFactorRoot.FromXml` 与 `GrowthRecipeRoot.FromXml` 两条调用成功：LevelFactor 扩展 160 条、合并后 880 条，GrowthRecipe 736 条；Artifact 容量 Getter 回读 9999，Permanent Raid 与 Battle Multiple 步骤也报告完成。该二进制构建时尚未接入本次 `custom_resource_tables` 重写，因此当前 step 6 的实现还需要新的 Android 构建和设备验证。
 
-当前 Host Release 自动化测试共 6 项：永久 Raid 边界、Artifact 容量反射写回、Character99 静态资源结构、Character99 对象图、IL2CPP 类元数据枚举、Touch fallback policy。它们均通过，但不能替代目标设备上的 Android ARM64 构建及游戏回归。阶段 1–5 的准确状态见 `docs/PHASE_PROGRESS.md`。
+当前 Host Release CTest 共 12 项，全部通过：Permanent Raid、Artifact 容量、Character99 静态资源、Character99 对象图、IL2CPP 类元数据、Touch fallback、旧存档迁移、Character99 Invoke 参数编组、Backend 旧存档集成、Custom Resource 修复、Custom Mail 静态目录/136 槽 resolver、Gacha Visual payload/奖励累计合并。Host 测试不替代 Android ARM64 构建和真机回归。阶段状态见 [`docs/PHASE_PROGRESS.md`](docs/PHASE_PROGRESS.md)，Custom Item / Mail 的反汇编证据见 [`docs/CUSTOM_ITEM_TABLES_REVERSE_ENGINEERING.md`](docs/CUSTOM_ITEM_TABLES_REVERSE_ENGINEERING.md)。
 
+## 当前 Touch 恢复进度（2026-11-24）
 
-## 当前 Touch 恢复进度（2026-11-23）
+当前源码已按原版顺序接入 step 1–7 的部分功能：step 7 已构造 Managed Item/Item_Reward rows 并验证对象 schema round-trip，但尚未恢复 Gacha/Reward conversion 与原版二进制 Wire 路径，因此 step 7 仍是 mandatory gate，dispatcher 在后续步骤前 fail-closed。`seed_table_defaults` 也未移植；虽然原版 false 返回不阻止后续步骤，但本工程当前跳过它并未重现其潜在副作用。
 
-当前源码按参考 ELF 的顺序执行 touch 前置流程：step 1 Artifact 容量、step 2 Character99 XML Root 重建、step 3 Permanent Raid、step 4 Seed（尚未移植；原始返回 false 为非致命，继续 step 5）、step 5 Battle Multiple。下一道必须完成的步骤是 step 6 `custom_resource_tables`；在它及后续 mandatory helpers 完成前，不会伪称已成功进入单机大厅。
-
-`Hook #5 installed` 只代表安装完成，不等于已处理请求。日志会分别报告 Hook #5 是否观察到回调；截至最新用户日志，Hook #5 安装后没有观察到任何 `local_request` callback，因此本地协议接管尚未得到设备证据。
+`Hook #5 installed` 只代表安装完成。最新用户设备日志没有任何 `local_request entered` callback，所以本地协议接管仍未得到设备证据。
 
 ## Crash containment and save migration
 

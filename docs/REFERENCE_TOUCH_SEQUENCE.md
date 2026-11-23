@@ -1,34 +1,34 @@
 # Reference `touch()` initialization sequence
 
-This file records the ordered control flow recovered from the user-supplied reference ELF's AArch64 disassembly and DWARF line information. The reference ELF is an analysis input only: it must never be linked, loaded, copied into the application, or shipped in the source archive.
+本文件记录用户提供的 `libastraeoffline.so` 中 `touch(controller, method)` 的 AArch64 反汇编/DWARF 恢复结果。原 ELF 只作为离线分析输入，不得链接、加载、复制进应用或随源码包交付。
 
 ## Outer sequence
 
-The reference `touch(controller, method)` does not jump directly to `EnterLobby()`. It recovers the live account and DataManager objects, applies local activity/reset state, executes the following helpers, and checks their return values before the final first-day/lobby branch:
+原版 `touch()` 不是直接跳到 `EnterLobby()`。它从 Controller 取得 DataManager/Account，执行以下顺序并检查结果：
 
-1. `artifact_capacity_tables(DataManager)` — mandatory; failure aborts the route.
-2. `character99_tables(DataManager)` — mandatory; failure aborts the route.
-3. `permanent_raid_tables(DataManager)` — mandatory; the project has a candidate reconstruction named `apply_permanent_raid_tables`, but it is not yet called from the verified touch sequence.
-4. `seed_table_defaults(DataManager)` — mandatory; this itself calls `seed_ticket_defaults()` and accesses the seed table at DataManager root offset `0x328`.
-5. `battle_multiple_tables(DataManager)` — mandatory; the project has a candidate reconstruction, but it is not yet called from the verified touch sequence.
-6. `custom_resource_tables(DataManager)` — mandatory.
-7. `custom_item_tables(DataManager)` — mandatory.
-8. `signed_exchange_tables(DataManager)` — mandatory.
-9. `sync_unlocks()` — mandatory; calls `earned_unlocks()` and `store_apply_account_unlocks()` when the persistent unlock snapshot differs.
-10. `bootstrap(Account)` — mandatory; see its nested sequence below.
-11. `local_account_event_login()` — mandatory.
-12. `initialize_guide_cache(Account)` — mandatory; calls `guide_restore_cache(Account, true)`.
-13. `office_wire_probe()` — present in the current project, but not yet wired into the ordered sequence.
-14. `installation_native_tables(DataManager)` — the reference treats failure as a logged degradation rather than the same hard stop as the earlier mandatory helpers; a candidate reconstruction exists but is not yet wired into the ordered sequence.
-15. Only after the above, evaluate the Store content bits/first-day state and invoke `EnterLobby()` or `PlayFirstDay()`.
+1. `artifact_capacity_tables(DataManager)` — mandatory。
+2. `character99_tables(DataManager)` — mandatory。
+3. `permanent_raid_tables(DataManager)` — mandatory。
+4. `seed_table_defaults(DataManager)` — helper 返回 false 时走非致命路径，继续 Battle；helper 内部副作用仍然需要独立还原。
+5. `battle_multiple_tables(DataManager)` — mandatory。
+6. `custom_resource_tables(DataManager)` — mandatory。
+7. `custom_item_tables(DataManager)` — mandatory。
+8. `signed_exchange_tables(DataManager)` — mandatory。
+9. `sync_unlocks()` — mandatory；比较 `earned_unlocks()` 与持久化快照，必要时调用 `store_apply_account_unlocks()`。
+10. `bootstrap(Account)` — mandatory，包含 13 个嵌套恢复步骤。
+11. `local_account_event_login()` — mandatory。
+12. `initialize_guide_cache(Account)` — 调用 `guide_restore_cache(Account, true)`。
+13. `office_wire_probe()` — 独立辅助步骤。
+14. `installation_native_tables(DataManager)` — 失败按降级/日志处理，不等同于前面的 hard stop。
+15. 检查 Store content bits / first-day 状态后调用 `EnterLobby()` 或 `PlayFirstDay()`。
 
 ## `bootstrap(Account)` nested sequence
 
-The reference `bootstrap` is not a single field assignment. The disassembly shows it constructs/updates Managed state from the persistent local Store, queues a prologue gift when the account's first-day state requires it, converts up to 30 type-5 reward balances through `rune_reward_resolve()` and `store_purchase_rewards()`, then executes these mandatory restorers in order:
+原版 `bootstrap` 不是单一字段赋值。其前置逻辑涉及首日 prologue 礼物、至多 30 个 type-5 reward balance 的 `rune_reward_resolve()` / `store_purchase_rewards()` 转换；之后按序调用以下 mandatory restorers：
 
 1. `restore_balances(Account)`
 2. `restore_foundation(Account)`
-3. `pack_objects_cache(...)` for stored pack identifiers
+3. `pack_objects_cache(...)`
 4. `local_mail_count(Account)`
 5. `restore_gacha(Account)`
 6. `restore_farming_cache(Account)`
@@ -40,33 +40,63 @@ The reference `bootstrap` is not a single field assignment. The disassembly show
 12. `restore_pack_missions(Account)`
 13. `restore_puzzles(Account)`
 
-`bootstrap` returns failure if required substeps fail. After it succeeds, `touch()` separately calls `local_account_event_login()` and `initialize_guide_cache(Account)` (`guide_restore_cache(Account, true)`). These two Guide passes are distinct and must not be collapsed into one no-op.
+`bootstrap` 成功后，外层还会执行 `local_account_event_login()` 和 `initialize_guide_cache(Account)`（即 `guide_restore_cache(Account, true)`）。这两次 Guide 恢复不能合并成一个 no-op。
 
-## Reconstruction status in this source tree
+## Reconstruction status
 
-| Reference helper | Current source status |
-|---|---|
-| `artifact_capacity_tables` | Reconstructed from `0x24c2ec`, wired as outer step 1; Host IL2CPP-mock tests cover exact DataManager path, `SecureInt.set_Value(9999)`, getter read-back, missing object and mismatch. Android game validation is pending. |
-| `character99_tables` | Not reconstructed; complex recipe/stat cache mutation |
-| `permanent_raid_tables` | Candidate `apply_permanent_raid_tables` exists; count range 1..128 and row writes are Host-tested; integration/device verification pending (cannot run before missing step 2 and step 4 are restored). |
-| `seed_ticket_defaults` / `seed_table_defaults` | Not reconstructed |
-| `battle_multiple_tables` | Candidate implementation exists; integration/device verification pending (outer step 5). |
-| `custom_resource_tables` | Not reconstructed |
-| `custom_item_tables` | Not reconstructed |
-| `signed_exchange_tables` | Not reconstructed |
-| `earned_unlocks` / `sync_unlocks` | Not reconstructed |
-| `bootstrap` and all nested restorers above | Not reconstructed as a complete Managed-state pipeline |
-| `local_account_event_login` | Not reconstructed |
-| `guide_restore_cache` / `initialize_guide_cache` | Only JSON-side `guide_state_from_document` exists; live Managed cache restoration is not reconstructed |
-| `office_wire_probe` | Candidate implementation exists; integration/device verification pending |
-| `installation_native_tables` | Candidate implementation exists; integration/device verification pending |
+| Helper | 当前源码状态 | 证据/缺口 |
+|---|---|---|
+| `artifact_capacity_tables` | 已重写并接入 step 1 | Host mock 通过；用户设备日志观察到 9999 写入/回读。 |
+| `character99_tables` | 已重写并接入 step 2 | ELF 静态资源 + IL2CPP FromXml；用户设备日志记录 LevelFactor 880、GrowthRecipe 736 成功。 |
+| `permanent_raid_tables` | 已重写并接入 step 3 | Host mock 通过；用户设备日志报告完成。 |
+| `seed_ticket_defaults` / `seed_table_defaults` | 未重写 | 原版 false 返回非致命；当前源码只跳过并标记，不具备该 helper 的副作用。 |
+| `battle_multiple_tables` | 已重写并接入 step 5 | Host mock/对象验证；用户设备日志报告完成。 |
+| `custom_resource_tables` | 源码重写并接入 step 6 | 32 Vignette、Challenge Gate、Story Pack expiry、Sigrid Mastery；Host mock 通过。新代码尚未取得设备验证。 |
+| `custom_item_tables` | 部分重写，仍为 hard gate | Managed Item/Item_Reward rows 已构造并合并；运行时 FromXml/字段/Root.ReplaceDataList ABI 预检和 21 组 Managed schema object round-trip 已接入。还缺 Gacha/Reward conversion、完整 cJSON/wire 比较语义及设备验证；当前 round-trip 不等于原版二进制 Wire parity。 |
+| `signed_exchange_tables` | 独立 runtime helper 已移植，未接入 touch | 入口 `0x25082c`；DataLoader 槽 `+0x338`；DataList 长度 `1..4096`；调用 `get_ParcelId()` 查找 `900010006`。缺失时构造 `Recruit_AdjustStoreXmlData`（Id=100、Type=2、ParcelId=900010006、偏移 `+0x30` 的 8-byte 原始 payload、Icon 与两项 LocalizeId），校验静态 `Recruit_AdjustStoreData.FromXml` 和 Root `ReplaceDataList`，追加后回读 ParcelId。Host 仅测规格和边界；尚无设备验证。 |
+| `earned_unlocks` / `sync_unlocks` | Reducer、IL2CPP 提取和 Backend 同步适配已移植，未接入 touch | `earned_unlocks@0x2531ac` 读取 DataLoader `+0x4a0` / `+0x3c8` 的 Unlock / ScenarioPack DataList，按 Store quest-rank、ReqUnlockGroupId/Value 及 mode 1/2 合并，`mode=2 && TableId=200` 固定为 99。`sync_unlocks@0x250da4` 用紧凑 JSON 比较，变化时调用等价 Backend 事务；Host 覆盖 reducer 与账号 Exp/回滚。Android Managed 元数据、设备行为尚未验证。 |
+| `local_mail_count` | 独立 runtime helper 已移植，未接入 bootstrap | `local_mail_count@0x243928` 遍历 Store `mails`，读取 `Receipt` 的 cJSON `valueint`，只计数 `>1`；随后通过 Account `+0x60` 调用 `SetMailCount(Int32, Boolean)`，第二个参数为 `count>0`。当前实现验证 `(System.Int32, System.Boolean) -> System.Void` ABI 后调用。Host 仅验证计数语义，未做 Android 设备调用验证。详见 `LOCAL_MAIL_COUNT_REVERSE_ENGINEERING.md`。 |
+| `bootstrap` 与 13 个嵌套 restorers | 未完成 | 没有完整 Managed Account 初始化链。
+| `local_account_event_login` | 未完成 | 活动事件路径未实现。 |
+| `guide_restore_cache` / `initialize_guide_cache` | 未完成 | 有 JSON 侧数据模型，不代表 live Managed cache 已恢复。 |
+| `office_wire_probe` | 候选代码存在，未接入完整顺序 | 需验证运行时触发语义。 |
+| `installation_native_tables` | 候选代码存在，未接入完整顺序 | 需验证原版降级语义及设备对象图。 |
 
-## Current phase execution record
+## `custom_resource_tables` pseudocode recovered
 
-- Step 1 `artifact_capacity_tables` is now called by `touch_enter_lobby()` immediately after Controller/DataManager/Account validation. It uses the live Common object at `DataManager root + 0x140 -> wrapper + 0x18 -> object + 0x10`, locates `_AT.Shared.SecureInt`, invokes `set_Value(9999)` on the inline field at `Common+0xc8`, then invokes `get_Inventory_Artifact_Max_Slots()` and validates the boxed Int32 is exactly 9999. Any failed lookup, Managed exception, null result, or mismatched readback aborts before later helpers.
-- Host regression test `artifact_capacity_tables` validates the field path, setter/getter behavior, missing Common and incorrect readback. `permanent_raid_tables` separately validates the source-derived 1..128 count bounds and both 64-bit row values. These are host mock tests, not Android device validation.
-- The callback still stops after Step 1 because Step 2 `character99_tables` is not reconstructed. The reference's following steps have not been skipped or marked successful. The fail-closed status is expected until the complete ordered chain exists.
+下面是当前已经移植的核心控制逻辑摘要；不是原函数逐指令的完整伪代码：
+
+```text
+custom_resource_tables(dm):
+    if not repair_vignette_icon_fallbacks(dm):
+        return false
+    challenge_ok = challenge_gate_tables(dm)
+    story_ok = permanent_story_pack_tables(dm)
+    sigrid_ok = sigrid_mastery_tables(dm)
+    return challenge_ok && story_ok && sigrid_ok
+```
+
+- **Vignette fallback**：查 DataManager root `+0x4b8`，以 `0x2714` 找到目标 row；为 ELF 恢复出的 32 条资源路径创建 Managed String，并通过 `gc_wbarrier_set_field` 写入 row `+0xd0`。源常量和 Host 测试覆盖 32 条路径。
+- **Challenge Gate**：DataManager root `+0x2f0`，目标 Id `0x0f47b9` 和 `0x0f4ba1`。分别查找行，校验 Groups 首元素 `1000`、Values 首值允许 `(3,6)` 或 `(2,5)`、`ReqAccountLevel=20`，再将 Values 首值规范化为 `(2,5)`。原版对两个 ID 分别重扫列表。
+- **Story Pack expiry**：root `+0x3a8`，查 GroupId 1001/1002，将 `+0xc8` 与 `+0xd8/+0xe0` 两个 DateTime 值设为 DateTime.Max。
+- **Sigrid Mastery**：root `+0x400`，GroupId `0x0f4845`，SkillGroupId 100154104/100154105，匹配 LocalizeId `0x35e85afbe859839b`、Node 字段和 Enable/Disable 参数后，将两个目标行 `+0x30` 设置为 4。注意原函数的 Enable 参数比较基于变体索引 0/1，对应值 4/5；Disable 为 5/99999。
+- 参考控制流在 Challenge 失败后仍继续尝试 Story expiry 和 Sigrid，再在末尾合并结果；当前实现和 Host regression test 保留了这个副作用顺序。
+
+## `custom_item_tables` reverse findings
+
+- Entry: `custom_item_tables@0x24f280`，size `0x15ac`。
+- 从 DataManager root `+0x258` 与 `+0x270` 取得两个表/集合入口；读取的列表计数分别限制为 `<=0x4000`。
+- 路径中使用 0x800-byte JSON scratch buffer、`GetData`、`ItemData`、`Item_RewardData`、`Item_RewardXmlData`、wire read/build 与 cJSON compare 等操作；后段还有 Gacha/Reward 转换校验。
+- ELF/DWARF 静态结构 `custom_mail_item` 为 32 bytes：`id:u64@0`、`type:u32@8`、`name:pointer@16`、`desc:pointer@24`；共 22 条。
+- 静态结构 `custom_mail_choice` 为 24 bytes：`item:u64@0`、`id:u64@8`、`type:u32@16`；共 715 条。
+- `custom_item@0x269100` 的 136 槽 ParcelId resolver 覆盖 `900010001..900010136`，22 个槽有效，其余返回 null。静态资产 `assets/tables/embedded_11_custom_mail.json` 保留原中文字符串、22 descriptors、715 choices 与 resolver；`src/custom_mail_catalog.*` 提供只读 C++ 查询，Host test 验证全部 136 槽映射和全部 choice 数量。
+- 当前源码已完成第一阶段 Managed DataSheet/list 生成：`ItemXmlData` / `Item_RewardXmlData` 单行对象经静态 `FromXml` 转换为 Data 行，校验返回类并补写恢复出的类型字段；预检两个 Root 的元素类型及 `ReplaceDataList` 数组参数后才开始修改；再将新行合并并验证 `DataDic`。另外对 21 个非 type-10 parcel 构造 `ItemUseSelectable.Request` Managed 对象并完成 schema JSON 往返。
+- 上述检查不是原版底层 Wire serializer 的二进制等价实现；Gacha duplicate/conversion/visual/reward 检查、完整 JSON/cJSON compare 及失败时全部副作用仍未实现。大厅入口必须继续 fail-closed。
+
+## Current device log versus current source
+
+最新用户上传的 `debug.log` 设备 Build ID 为 `4b8fe8d415dd-216374b60bb84369`，时间 2026-11-24 01:03:40。它确认 step 1–5 运行成功，Character99 的 FromXml 两条路径均成功；但这个设备二进制在 `custom_resource_tables` 新重写接入前构建，日志在 step 6 开始前退出。因此不能把当前 step 6 的 Host 通过误报为设备通过。当前源代码 step 6 成功后会尝试 step 7 Managed Item/Item_Reward 重建；即使这些行重建成功，仍因 Gacha/Reward conversion parity 未完成而在后续大厅步骤前 fail-closed。
 
 ## Gate policy
 
-The custom dispatcher still fails closed and does not call `EnterLobby()` / `PlayFirstDay()` until every mandatory helper has a tested implementation, every nested `bootstrap` step has succeeded, and Account/DataManager/cache state has been checked. However, the user-facing login tap must not be swallowed: Android standard builds install Hook #5 before Hook #3. If the custom prelude returns incomplete and Hook #5 is confirmed installed, Hook #3 calls the previous original game `touch()` through ShadowHook `SHADOWHOOK_CALL_PREV`; subsequent requests are intercepted by the local Backend, with unsupported requests receiving a local ErrorPacket rather than reaching the online implementation. Android CMake and build scripts reject Hook #3 enabled while Hook #5 is disabled. This conditional fallback restores the original navigation handler, not complete offline compatibility. Do not mark Hook #5 fully offline until all request/response families and active Managed event paths have been verified.
+未完成所有 mandatory helper、`bootstrap` 子步骤、Managed Account/cache 状态校验和 Hook 网络路径前，不得调用自研的 `EnterLobby()` / `PlayFirstDay()` dispatcher。登录入口的 Hook #3 在前置链未完成时，只能在 Hook #5 确认已安装的情况下 `SHADOWHOOK_CALL_PREV` 转发原游戏 touch；这是防止点击被吞的兼容回退，不代表离线流程完成。Hook #5 安装成功也不代表请求已到达；必须观察到真实 `local_request` 回调和完整业务响应。

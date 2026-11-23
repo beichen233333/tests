@@ -16,6 +16,8 @@ public:
     std::string handle(const std::string &protocol, const std::string &request_json);
     std::string state_json();
     int replace_state(const std::string &state_json);
+    bool is_initialized();
+    bool apply_account_unlocks(const Value &unlocks);
     std::string diagnostics_json();
     std::string protocol_catalog_json();
     std::string validate_request_json(const std::string &protocol, const std::string &request_json);
